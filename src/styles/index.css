@@ -1,0 +1,104 @@
+:root {
+  --bg: #f3efe2;
+  --ink: #1d2a20;
+  --accent: #587850;
+  --muted: rgba(29, 42, 32, 0.55);
+  --font-serif: 'Bodoni Moda', serif;
+  --font-kr: 'Noto Serif KR', serif;
+}
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.app-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── canvas ── */
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  pointer-events: none;
+}
+.canvas-wrap.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── intro HUD ── */
+.hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--bg);
+  text-align: center;
+  padding: 2rem;
+  user-select: none;
+}
+
+.hud__eyebrow {
+  font-family: var(--font-serif);
+  font-size: 0.75rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hud__title {
+  font-family: var(--font-serif);
+  font-size: clamp(2.8rem, 6vw, 5rem);
+  font-weight: 200;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  background: linear-gradient(to bottom, var(--ink) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.1;
+}
+
+.hud__sub {
+  font-family: var(--font-kr);
+  font-size: 1rem;
+  font-weight: 200;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.hud__btn {
+  margin-top: 2rem;
+  padding: 0.9rem 2.4rem;
+  border: 1px solid rgba(88, 120, 80, 0.3);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-kr);
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+.hud__btn:hover {
+  border-color: rgba(88, 120, 80, 0.7);
+  background: rgba(88, 120, 80, 0.07);
+  transform: translateY(-2px);
+}
