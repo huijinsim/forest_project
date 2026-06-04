@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-// toon.frag ─ 셀(카툰) 셰이딩 + 공기원근 안개
-// 라이트와의 각도를 몇 단계로 "계단화"해서 평평한 손그림 음영을 만든다.
+// toon.frag ─ 부드러운 일러스트형 음영 + 공기원근
+// 날카로운 3단계 대신 smoothstep으로 채도 낮은 손그림 톤을 만든다.
 // ─────────────────────────────────────────────────────────────
 
 uniform vec3 uBaseColor;
-uniform vec3 uLightDir;   // 월드 공간 광원 방향(정규화 전제)
+uniform vec3 uLightDir;
 uniform vec3 uLightColor;
-uniform float uAmbient;   // 0~1, 클수록 그림자가 옅어 평평해진다
+uniform float uAmbient;
 uniform vec3 uFogColor;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -18,17 +18,18 @@ void main() {
   vec3 N = normalize(vNormalW);
   vec3 L = normalize(uLightDir);
 
-  // 0~1로 매핑한 난반사
   float ndl = dot(N, L) * 0.5 + 0.5;
 
-  // ── 셀 밴드(3단계) ── 부드러운 그라데이션 대신 계단형 음영
-  float band = ndl > 0.62 ? 1.0 : (ndl > 0.42 ? 0.8 : 0.62);
+  // 부드러운 2~3단 음영 (일러스트 스티플 느낌의 옅은 명암)
+  float shade = smoothstep(0.28, 0.52, ndl) * 0.22 + smoothstep(0.5, 0.82, ndl) * 0.28 + 0.5;
 
-  vec3 col = uBaseColor * (uAmbient + (1.0 - uAmbient) * band);
-  // 밝은 면에 햇빛색을 살짝 섞어 따뜻하게
-  col *= mix(vec3(1.0), uLightColor, 0.22 * band);
+  vec3 col = uBaseColor * (uAmbient + (1.0 - uAmbient) * shade);
+  col = mix(col, col * uLightColor, 0.12 * shade);
 
-  // ── 공기원근 ── 멀수록 안개색으로 수렴
+  // 채도를 살짝 눌러 일러스트 톤 유지
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(lum), col, 0.88);
+
   float fog = smoothstep(uFogNear, uFogFar, vFogDepth);
   col = mix(col, uFogColor, fog);
 

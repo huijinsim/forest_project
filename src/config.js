@@ -1,111 +1,127 @@
 // ─────────────────────────────────────────────────────────────
-// config.js
-// 모든 "매직넘버"와 아트 디렉션(팔레트/조명/안개)을 한곳에 모은다.
-// 분위기를 바꾸려면 항상 이 파일만 본다.
-//
-// 핵심: 일러스트를 텍스처로 깔지 않는다. 숲을 "3D로 모델링"해서
-// 진짜 공간감을 만들고, 손그림 느낌(셀 셰이딩 + 잉크 외곽선 + 종이질감)은
-// 전부 셰이더로 입힌다. 일러스트는 색감/분위기 레퍼런스일 뿐.
+// config.js — 산속 숲 일러스트(970A…) 색감·구도 기준
 // ─────────────────────────────────────────────────────────────
 
 export const CONFIG = {
-  // ── 렌더러 ──────────────────────────────────────────────
   renderer: {
     maxPixelRatio: 2,
-    clearColor: '#cfd6c0', // 안개색과 맞춰 화면 가장자리 이질감 제거
+    clearColor: '#edd9a0',
   },
 
-  // ── 카메라 ──────────────────────────────────────────────
-  // 숲 속 빈터에 서서 안쪽(−z)을 바라보는 시점.
+  // 숲 입구에서 산·하늘 쪽을 바라보는 구도
   camera: {
-    fov: 38,
+    fov: 42,
     near: 0.1,
     far: 800,
-    position: [0, 2.2, 16],
-    target: [0, 2.0, -25],
+    position: [0, 3.0, 26],
+    target: [0, 7, -42],
+    dolly: {
+      min: -8,
+      max: 28,
+      speed: 0.028,
+      damping: 0.08,
+    },
   },
 
-  // ── 마우스 패럴랙스 / 카메라 호흡 ───────────────────────
   parallax: {
-    strength: 1.4,    // 포인터(-1..1)에 따른 카메라 좌우/상하 이동(월드 단위)
-    damping: 0.05,    // 추적 감쇠(작을수록 부드럽게)
-    look: 0.6,        // 시선이 포인터 반대로 따라가는 정도
-    breathe: 0.25,    // 자동으로 천천히 떠다니는 진폭
-    breatheSpeed: 0.18,
+    strength: 1.1,
+    damping: 0.05,
+    look: 0.55,
+    breathe: 0.18,
+    breatheSpeed: 0.16,
   },
 
-  // ── 바람 (정점 흔들림) ──────────────────────────────────
   wind: {
-    speed: 1.1,
-    frequency: 0.25,
-    amplitude: 0.22,  // 캐노피 끝이 흔들리는 최대 변위(월드 단위)
-    swayBase: 2.0,    // 이 높이(local y) 아래는 흔들리지 않음(줄기)
-    swayTop: 8.0,     // 이 높이 이상은 최대로 흔들림(잎 끝)
+    speed: 0.95,
+    frequency: 0.22,
+    amplitude: 0.16,
+    swayBase: 1.5,
+    swayTop: 9.0,
   },
 
-  // ── 조명 (셀 셰이딩) ────────────────────────────────────
   light: {
-    direction: [-0.45, 0.95, 0.35], // 위쪽-좌측-앞에서 비치는 부드러운 광
-    color: '#fff3d0',               // 따뜻한 햇빛 틴트
-    ambient: 0.58,                  // 일러스트처럼 평평하게: 그림자 약하게
+    direction: [-0.35, 0.92, 0.28],
+    color: '#fff4d8',
+    ambient: 0.7,
   },
 
-  // ── 잉크 외곽선 (inverted-hull) ─────────────────────────
   outline: {
-    width: 0.045,   // 노멀 방향으로 밀어내는 두께(월드 단위)
-    color: '#23291c',
+    width: 0.032,
+    color: '#2a2e26',
   },
 
-  // ── 안개 (공기원근) ─────────────────────────────────────
   fog: {
-    color: '#d2d8c4',
-    near: 22,
-    far: 165,
+    color: '#e8d4a8',
+    near: 28,
+    far: 150,
   },
 
-  // ── 하늘 그라데이션 (스카이돔) ──────────────────────────
   sky: {
-    top: '#ead9a6',     // 따뜻한 크림빛(레퍼런스 산 일러스트 상단)
-    bottom: '#e6ebd4',  // 옅은 연두빛(지평선 근처)
-    radius: 400,
+    top: '#e5c582',
+    bottom: '#f3e5ab',
+    radius: 420,
   },
 
-  // ── 숲 배치 (절차적 생성) ───────────────────────────────
   forest: {
-    seed: 1337,
-    treeCount: 46,
-    areaX: 46,          // x 방향 산포 반경(±)
-    zNear: 12,          // 카메라 앞쪽 가장 가까운 나무
-    zFar: -120,         // 가장 먼 나무
-    clearingCenter: [0, -6], // [x, z] 빈터 중심
-    clearingRadius: 7.5,     // 이 반경 안에는 나무를 두지 않음(빈터)
-    bushCount: 14,
+    seed: 2026,
+    treeCount: 240,
+    areaX: 88,
+    zNear: 14,
+    zFar: -175,
+    // 일러스트 중앙 빈터(연한 바닥)
+    clearingCenter: [0, -4],
+    clearingRadius: 5.5,
+    bushCount: 70,
+    grassClumps: 28,
+    cattails: 16,
+    // 깊이별 밀도 가중
+    rows: 5,
   },
 
-  // ── 산 (먼 배경 실루엣) ─────────────────────────────────
   mountains: [
-    // [x, z, 높이, 밑변 반경]
-    [-55, -185, 78, 60],
-    [10, -210, 95, 72],
-    [70, -190, 70, 55],
-    [-110, -200, 62, 50],
-    [130, -205, 80, 60],
+    [-70, -195, 88, 68],
+    [-15, -220, 102, 78],
+    [55, -205, 82, 62],
+    [115, -215, 90, 65],
+    [-130, -210, 72, 55],
   ],
 
-  // ── 종이질감 PostFX ─────────────────────────────────────
   paper: {
-    grain: 0.05,
-    vignette: 0.3,
-    vignetteSoftness: 0.5,
+    grain: 0.045,
+    vignette: 0.28,
+    vignetteSoftness: 0.48,
   },
 }
 
-// ── 팔레트 (레퍼런스 일러스트에서 추출한 색) ──────────────
-// 손그림 톤: 채도 낮은 올리브/세이지 그린 + 회갈색 줄기 + 먹색 외곽선.
+// ── 팔레트: 일러스트 추출 ─────────────────────────────────
 export const PALETTE = {
-  foliage: ['#4f6b39', '#5f7d45', '#6f9150', '#86a45f', '#9bb86c'],
-  trunk: '#9b9078',
-  ground: '#bcc79e',
-  bush: '#6f9150',
-  mountain: ['#aebfa6', '#bcccae', '#9fb39f'],
+  // 짙은 침엽 (배경·원경)
+  foliageDark: ['#4b5d3f', '#526848', '#465738', '#556a47'],
+  // 밝은 잎 (중·전경)
+  foliageLight: ['#7a9a5c', '#8da466', '#9bb576', '#a8c078'],
+  trunk: '#8a8272',
+  trunkDark: '#6e685c',
+  ground: '#c8d4a8',
+  groundWarm: '#d8dcb8',
+  bush: '#5a6f4a',
+  bushDark: '#4b5d3f',
+  mountain: ['#c8d5b9', '#b8c8a8', '#d4deca'],
+  mountainLine: '#8a9a7a',
+  grass: '#9bab7a',
+  cattailStalk: '#8a9078',
+  cattailTip: '#d4a85a',
+  cattailTipBright: '#e8c060',
+}
+
+/** 잎 색 선택: depth 0(먼)~1(가까움) */
+export function pickFoliageColor(rng, depth) {
+  const dark = PALETTE.foliageDark
+  const light = PALETTE.foliageLight
+  if (depth < 0.3) return dark[Math.floor(rng() * dark.length)]
+  if (depth < 0.55) {
+    return rng() > 0.5
+      ? dark[Math.floor(rng() * dark.length)]
+      : light[Math.floor(rng() * light.length)]
+  }
+  return light[Math.floor(rng() * light.length)]
 }

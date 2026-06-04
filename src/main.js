@@ -8,7 +8,6 @@ import { Debug } from './ui/Debug.js'
 const app = new App({
   container: document.getElementById('app'),
   loaderEl: document.getElementById('loader'),
-  hudEl: document.getElementById('hud'),
 })
 
 // 실시간 파라미터 패널 (프로덕션에서 빼려면 이 두 줄만 삭제)

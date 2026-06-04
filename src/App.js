@@ -16,12 +16,10 @@ export class App {
    * @param {object} opts
    * @param {HTMLElement} opts.container
    * @param {HTMLElement} opts.loaderEl
-   * @param {HTMLElement} opts.hudEl
    */
-  constructor({ container, loaderEl, hudEl }) {
+  constructor({ container, loaderEl }) {
     this.container = container
     this.loaderEl = loaderEl
-    this.hudEl = hudEl
 
     this.clock = new THREE.Clock()
 
@@ -32,6 +30,12 @@ export class App {
     // 카메라 기준 위치/시선 (패럴랙스는 이 값에 오프셋을 더한다)
     this.camBase = new THREE.Vector3(...CONFIG.camera.position)
     this.lookTarget = new THREE.Vector3(...CONFIG.camera.target)
+
+    // 줌(시선 방향 돌리): target = 휠 입력, 현재값은 감쇠로 따라간다
+    this.zoom = 0
+    this.zoomTarget = 0
+    // 카메라 → 시선 타깃 방향(정규화). 줌은 이 방향으로 전진/후진.
+    this._forward = new THREE.Vector3().subVectors(this.lookTarget, this.camBase).normalize()
 
     this.renderer = new Renderer(container)
 
@@ -44,7 +48,6 @@ export class App {
     this.postfx = new PostFX(this.renderer.instance)
 
     this.resize()
-    this._updateHud('숲의 숨결')
     this.loaderEl.classList.add('is-hidden')
 
     this.clock.start()
@@ -60,6 +63,18 @@ export class App {
       this.pointerTarget.y = -((e.clientY / window.innerHeight) * 2 - 1)
     }
     window.addEventListener('pointermove', this._onPointerMove)
+
+    // 마우스 휠 → 줌인/줌아웃 (시선 방향 돌리). 페이지 스크롤은 막는다.
+    this._onWheel = (e) => {
+      e.preventDefault()
+      const d = CONFIG.camera.dolly
+      this.zoomTarget = THREE.MathUtils.clamp(
+        this.zoomTarget - e.deltaY * d.speed,
+        d.min,
+        d.max,
+      )
+    }
+    this.container.addEventListener('wheel', this._onWheel, { passive: false })
   }
 
   resize() {
@@ -68,11 +83,6 @@ export class App {
       const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio)
       this.postfx.resize(this.container.clientWidth, this.container.clientHeight, dpr)
     }
-  }
-
-  _updateHud(title) {
-    const t = this.hudEl.querySelector('.ch-title')
-    if (t) t.textContent = title
   }
 
   _loop() {
@@ -85,16 +95,21 @@ export class App {
     const a = 1 - Math.pow(1 - CONFIG.parallax.damping, delta * 60)
     this.pointer.lerp(this.pointerTarget, a)
 
-    // ── 카메라 패럴랙스 + 자동 호흡 ──
+    // 줌 감쇠: 휠 목표값을 부드럽게 따라간다
+    const za = 1 - Math.pow(1 - CONFIG.camera.dolly.damping, delta * 60)
+    this.zoom += (this.zoomTarget - this.zoom) * za
+
+    // ── 카메라 패럴랙스 + 자동 호흡 + 줌 돌리 ──
     const p = CONFIG.parallax
     const breatheX = Math.sin(elapsed * p.breatheSpeed) * p.breathe
     const breatheY = Math.cos(elapsed * p.breatheSpeed * 0.7) * p.breathe * 0.5
 
+    const f = this._forward
     const cam = this.renderer.camera
     cam.position.set(
-      this.camBase.x + this.pointer.x * p.strength + breatheX,
-      this.camBase.y + this.pointer.y * p.strength * 0.6 + breatheY,
-      this.camBase.z,
+      this.camBase.x + f.x * this.zoom + this.pointer.x * p.strength + breatheX,
+      this.camBase.y + f.y * this.zoom + this.pointer.y * p.strength * 0.6 + breatheY,
+      this.camBase.z + f.z * this.zoom,
     )
     // 시선은 포인터 반대로 살짝 끌려가 입체감을 강조
     cam.lookAt(
@@ -114,6 +129,7 @@ export class App {
     cancelAnimationFrame(this._raf)
     window.removeEventListener('resize', this._onResize)
     window.removeEventListener('pointermove', this._onPointerMove)
+    this.container.removeEventListener('wheel', this._onWheel)
     this.forest?.dispose()
     this.postfx?.dispose()
     this.renderer.dispose()

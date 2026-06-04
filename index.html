@@ -4,54 +4,27 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ethereal Forest | 숲의 숨결</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
+    <title>Ethereal Forest</title>
     <style>
-      /* 전체 화면 캔버스를 위한 최소 리셋 */
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body { width: 100%; height: 100%; overflow: hidden; background: #cdd3bf; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #edd9a0; }
       #app { position: fixed; inset: 0; }
       #app canvas { display: block; width: 100%; height: 100%; }
 
-      /* 로딩 오버레이 */
       #loader {
         position: fixed; inset: 0; z-index: 10;
         display: flex; align-items: center; justify-content: center;
-        background: #cdd3bf;
-        font-family: 'Gowun Batang', serif;
-        color: #3a4632; letter-spacing: 0.3em;
+        background: #edd9a0;
+        font: 0.85rem/1.4 ui-sans-serif, system-ui, sans-serif;
+        color: #6d7a62; letter-spacing: 0.2em;
         transition: opacity 0.8s ease;
       }
       #loader.is-hidden { opacity: 0; pointer-events: none; }
-      #loader .pct { font-size: 0.9rem; }
-
-      /* 챕터 제목 HUD */
-      #hud {
-        position: fixed; left: 0; bottom: 0; z-index: 5;
-        padding: 2.2rem 2.6rem;
-        font-family: 'Gowun Batang', serif; color: #2f3a28;
-        pointer-events: none; user-select: none;
-        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
-      }
-      #hud .ch-index { font-size: 0.8rem; letter-spacing: 0.4em; opacity: 0.7; }
-      #hud .ch-title { font-size: 2rem; margin-top: 0.2rem; }
     </style>
   </head>
   <body>
     <div id="app"></div>
-
-    <div id="loader"><span class="pct">숲을 그리는 중… 0%</span></div>
-
-    <div id="hud">
-      <div class="ch-index">A LIVING FOREST</div>
-      <div class="ch-title">숲의 숨결</div>
-    </div>
-
+    <div id="loader"><span class="pct">…</span></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
