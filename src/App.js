@@ -5,51 +5,38 @@ import { Forest } from './world/Forest.js'
 import { PostFX } from './post/PostFX.js'
 
 // ─────────────────────────────────────────────────────────────
-// App
-// 전체 파이프라인을 조립하고 메인 루프를 돌리는 오케스트레이터.
-//   Forest(3D 숲) → PostFX(종이질감) → RAF 루프
-// 카메라는 마우스 패럴랙스 + 느린 자동 호흡으로 공간을 살아 움직이게 한다.
-// 모든 시간 기반 처리는 Clock의 delta/elapsed로 한다.
+// App — Forest → PostFX → RAF
+// 줌(앞뒤) + X축 패닝(좌우) + 마우스 패럴랙스
 // ─────────────────────────────────────────────────────────────
 export class App {
-  /**
-   * @param {object} opts
-   * @param {HTMLElement} opts.container
-   * @param {HTMLElement} opts.loaderEl
-   */
   constructor({ container, loaderEl }) {
     this.container = container
     this.loaderEl = loaderEl
-
     this.clock = new THREE.Clock()
 
-    // 포인터: target = 원시 입력, smooth = 감쇠 적용된 값
     this.pointerTarget = new THREE.Vector2(0, 0)
     this.pointer = new THREE.Vector2(0, 0)
 
-    // 카메라 기준 위치/시선 (패럴랙스는 이 값에 오프셋을 더한다)
-    this.camBase = new THREE.Vector3(...CONFIG.camera.position)
-    this.lookTarget = new THREE.Vector3(...CONFIG.camera.target)
+    this.zoomSmooth = CONFIG.camera.zoom.value
+    this.panSmooth = CONFIG.camera.pan.value
 
-    // 줌(시선 방향 돌리): target = 휠 입력, 현재값은 감쇠로 따라간다
-    this.zoom = 0
-    this.zoomTarget = 0
-    // 카메라 → 시선 타깃 방향(정규화). 줌은 이 방향으로 전진/후진.
-    this._forward = new THREE.Vector3().subVectors(this.lookTarget, this.camBase).normalize()
+    this._keys = { left: false, right: false }
+
+    this._posOv = new THREE.Vector3(...CONFIG.camera.overview.position)
+    this._posCl = new THREE.Vector3(...CONFIG.camera.close.position)
+    this._tgtOv = new THREE.Vector3(...CONFIG.camera.overview.target)
+    this._tgtCl = new THREE.Vector3(...CONFIG.camera.close.target)
+    this._lookAt = new THREE.Vector3()
 
     this.renderer = new Renderer(container)
-
     this._bindEvents()
   }
 
-  /** 초기화: 숲 구성 → 루프 시작 (외부 에셋이 없어 즉시 준비됨) */
   async init() {
     this.forest = new Forest()
     this.postfx = new PostFX(this.renderer.instance)
-
     this.resize()
     this.loaderEl.classList.add('is-hidden')
-
     this.clock.start()
     this._loop()
   }
@@ -64,17 +51,42 @@ export class App {
     }
     window.addEventListener('pointermove', this._onPointerMove)
 
-    // 마우스 휠 → 줌인/줌아웃 (시선 방향 돌리). 페이지 스크롤은 막는다.
     this._onWheel = (e) => {
       e.preventDefault()
-      const d = CONFIG.camera.dolly
-      this.zoomTarget = THREE.MathUtils.clamp(
-        this.zoomTarget - e.deltaY * d.speed,
-        d.min,
-        d.max,
+      const pan = CONFIG.camera.pan
+      const zoom = CONFIG.camera.zoom
+
+      // 가로 휠 / Shift+세로 휠 → X축 이동
+      const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0)
+      if (dx !== 0) {
+        pan.value = THREE.MathUtils.clamp(
+          pan.value - dx * pan.wheelSpeed,
+          pan.min,
+          pan.max,
+        )
+        return
+      }
+
+      // 세로 휠 → 줌
+      zoom.value = THREE.MathUtils.clamp(
+        zoom.value - e.deltaY * zoom.speed,
+        0,
+        1,
       )
+      window.dispatchEvent(new CustomEvent('forest:zoom', { detail: zoom.value }))
     }
     this.container.addEventListener('wheel', this._onWheel, { passive: false })
+
+    this._onKeyDown = (e) => {
+      if (e.key === 'ArrowLeft') this._keys.left = true
+      if (e.key === 'ArrowRight') this._keys.right = true
+    }
+    this._onKeyUp = (e) => {
+      if (e.key === 'ArrowLeft') this._keys.left = false
+      if (e.key === 'ArrowRight') this._keys.right = false
+    }
+    window.addEventListener('keydown', this._onKeyDown)
+    window.addEventListener('keyup', this._onKeyUp)
   }
 
   resize() {
@@ -91,37 +103,53 @@ export class App {
     const delta = this.clock.getDelta()
     const elapsed = this.clock.getElapsedTime()
 
-    // 포인터 감쇠(프레임레이트 독립): delta 기반 지수 보간
-    const a = 1 - Math.pow(1 - CONFIG.parallax.damping, delta * 60)
+    const p = CONFIG.parallax
+    const a = 1 - Math.pow(1 - p.damping, delta * 60)
     this.pointer.lerp(this.pointerTarget, a)
 
-    // 줌 감쇠: 휠 목표값을 부드럽게 따라간다
-    const za = 1 - Math.pow(1 - CONFIG.camera.dolly.damping, delta * 60)
-    this.zoom += (this.zoomTarget - this.zoom) * za
+    // 화살표 ← → : X축 이동
+    const panCfg = CONFIG.camera.pan
+    if (this._keys.left) panCfg.value = THREE.MathUtils.clamp(panCfg.value - panCfg.keySpeed * delta, panCfg.min, panCfg.max)
+    if (this._keys.right) panCfg.value = THREE.MathUtils.clamp(panCfg.value + panCfg.keySpeed * delta, panCfg.min, panCfg.max)
 
-    // ── 카메라 패럴랙스 + 자동 호흡 + 줌 돌리 ──
-    const p = CONFIG.parallax
-    const breatheX = Math.sin(elapsed * p.breatheSpeed) * p.breathe
-    const breatheY = Math.cos(elapsed * p.breatheSpeed * 0.7) * p.breathe * 0.5
+    const zd = CONFIG.camera.zoom
+    const za = 1 - Math.pow(1 - zd.damping, delta * 60)
+    this.zoomSmooth += (zd.value - this.zoomSmooth) * za
 
-    const f = this._forward
+    const pa = 1 - Math.pow(1 - panCfg.damping, delta * 60)
+    this.panSmooth += (panCfg.value - this.panSmooth) * pa
+
+    const t = this.zoomSmooth
+    const panX = this.panSmooth
     const cam = this.renderer.camera
-    cam.position.set(
-      this.camBase.x + f.x * this.zoom + this.pointer.x * p.strength + breatheX,
-      this.camBase.y + f.y * this.zoom + this.pointer.y * p.strength * 0.6 + breatheY,
-      this.camBase.z + f.z * this.zoom,
-    )
-    // 시선은 포인터 반대로 살짝 끌려가 입체감을 강조
+
+    cam.position.lerpVectors(this._posOv, this._posCl, t)
+    this._lookAt.lerpVectors(this._tgtOv, this._tgtCl, t)
+
+    // X축 패닝 — 카메라와 시선을 같이 이동
+    cam.position.x += panX
+    this._lookAt.x += panX
+
+    const parallaxScale = THREE.MathUtils.lerp(0.35, 0.75, t)
+    cam.position.x += this.pointer.x * p.strength * parallaxScale
+    cam.position.y += this.pointer.y * p.strength * 0.55 * parallaxScale
+
+    const breathe = p.breathe * (1 - t * 0.6)
+    cam.position.x += Math.sin(elapsed * p.breatheSpeed) * breathe
+    cam.position.y += Math.cos(elapsed * p.breatheSpeed * 0.7) * breathe * 0.5
+
     cam.lookAt(
-      this.lookTarget.x - this.pointer.x * p.look,
-      this.lookTarget.y - this.pointer.y * p.look,
-      this.lookTarget.z,
+      this._lookAt.x - this.pointer.x * p.look * parallaxScale,
+      this._lookAt.y - this.pointer.y * p.look * parallaxScale,
+      this._lookAt.z,
     )
 
-    // 숲(바람) 갱신
-    this.forest.update(elapsed)
+    cam.fov = THREE.MathUtils.lerp(CONFIG.camera.overview.fov, CONFIG.camera.close.fov, t)
+    if (cam.aspect < 1.05) cam.fov += (1.05 - cam.aspect) * 12
+    if (t > 0.5) cam.fov += (t - 0.5) * 6
+    cam.updateProjectionMatrix()
 
-    // 종이질감 포스트로 출력
+    this.forest.update(elapsed)
     this.postfx.render(this.forest.scene, cam, elapsed)
   }
 
@@ -129,6 +157,8 @@ export class App {
     cancelAnimationFrame(this._raf)
     window.removeEventListener('resize', this._onResize)
     window.removeEventListener('pointermove', this._onPointerMove)
+    window.removeEventListener('keydown', this._onKeyDown)
+    window.removeEventListener('keyup', this._onKeyUp)
     this.container.removeEventListener('wheel', this._onWheel)
     this.forest?.dispose()
     this.postfx?.dispose()

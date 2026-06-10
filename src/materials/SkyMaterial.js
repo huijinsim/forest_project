@@ -18,6 +18,7 @@ export class SkyMaterial extends THREE.ShaderMaterial {
       uniforms: {
         uTop: { value: new THREE.Color(CONFIG.sky.top) },
         uBottom: { value: new THREE.Color(CONFIG.sky.bottom) },
+        uHorizon: { value: new THREE.Color(CONFIG.sky.horizon) },
       },
     })
   }

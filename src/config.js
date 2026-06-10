@@ -8,19 +8,34 @@ export const CONFIG = {
     clearColor: '#edd9a0',
   },
 
-  // 숲 입구에서 산·하늘 쪽을 바라보는 구도
+  // 줌 0 = 숲 전체(멀리), 1 = 나무 사이(가까이)
   camera: {
-    fov: 42,
+    overview: {
+      position: [0, 16, 68],
+      target: [0, 5, -38],
+      fov: 50,
+    },
+    close: {
+      position: [0, 4.2, 17],
+      target: [0, 3.8, -16],
+      fov: 46,  // 넓게 → 캐노피 상하 잘림 방지
+    },
+    zoom: {
+      value: 0,       // 0~1, UI·휠이 갱신
+      speed: 0.0014,  // 휠 감도
+      damping: 0.1,
+    },
+    // X축 이동(좌우 패닝) — 카메라·시선을 함께 밀어 숲을 가로로 탐색
+    pan: {
+      value: 0,
+      min: -62,
+      max: 62,
+      wheelSpeed: 0.035,
+      keySpeed: 24,   // 화살표 키 (유닛/초)
+      damping: 0.1,
+    },
     near: 0.1,
     far: 800,
-    position: [0, 3.0, 26],
-    target: [0, 7, -42],
-    dolly: {
-      min: -8,
-      max: 28,
-      speed: 0.028,
-      damping: 0.08,
-    },
   },
 
   parallax: {
@@ -46,44 +61,70 @@ export const CONFIG = {
   },
 
   outline: {
-    width: 0.032,
+    width: 0.02, // 평소 고정 두께
     color: '#2a2e26',
   },
 
   fog: {
-    color: '#e8d4a8',
-    near: 28,
-    far: 150,
+    color: '#ead8aa',
+    near: 32,
+    far: 165,
   },
 
   sky: {
-    top: '#e5c582',
-    bottom: '#f3e5ab',
+    top: '#e5c582',     // 따뜻한 오크라 (하늘)
+    bottom: '#f3e5ab',  // 지평선 쪽 밝은 크림
+    horizon: '#ede0b0', // 구름·산 경계부
     radius: 420,
+  },
+
+  // 구름 — 하늘에 은은하게 녹아드는 레이어
+  clouds: {
+    driftAmp: 0.1,
+    opacity: 0.36,       // 낮을수록 더 투명·덜 튐
+    skyBlend: 0.62,      // 하늘색과 섞는 비율
+    items: [
+      // [x, y, z, scale, variant(0~2), shade(0밝음/1그림자)]
+      [-58, 34, -118, 6.2, 2, 0],
+      [12, 38, -125, 7.0, 2, 0],
+      [68, 32, -112, 5.4, 2, 1],
+      [-92, 44, -142, 7.5, 2, 0],
+      [98, 40, -135, 6.5, 1, 0],
+      [-8, 48, -148, 8.0, 2, 0],
+      [42, 26, -102, 4.8, 0, 1],
+      [-38, 28, -105, 5.0, 0, 1],
+      [115, 34, -128, 5.6, 1, 1],
+      [-130, 36, -138, 5.2, 1, 1],
+    ],
+    scatter: 8,
   },
 
   forest: {
     seed: 2026,
-    treeCount: 240,
-    areaX: 88,
+    treeCount: 980,
+    fillGrid: 480,
+    areaX: 96,
     zNear: 14,
     zFar: -175,
-    // 일러스트 중앙 빈터(연한 바닥)
     clearingCenter: [0, -4],
-    clearingRadius: 5.5,
-    bushCount: 70,
-    grassClumps: 28,
-    cattails: 16,
-    // 깊이별 밀도 가중
-    rows: 5,
+    clearingRadius: 2.6,
+    bushCount: 210,
+    grassClumps: 95,
+    cattails: 52,
+    ferns: 68,
+    rows: 11,
+    minTreeScale: 0.58,
+    maxTreeScale: 1.42,
+    canopyPadding: 1.06, // 캐노피 반경 합 × 여유 — 겹침 방지
   },
 
   mountains: [
-    [-70, -195, 88, 68],
-    [-15, -220, 102, 78],
-    [55, -205, 82, 62],
-    [115, -215, 90, 65],
-    [-130, -210, 72, 55],
+    // [x, z, 가로폭, 높이, Z두께] — 뾰족한 능선 실루엣
+    [-58, -218, 148, 96, 42],
+    [8, -235, 172, 108, 48],
+    [62, -222, 128, 82, 36],
+    [-118, -228, 118, 72, 32],
+    [118, -225, 138, 88, 38],
   ],
 
   paper: {
@@ -105,9 +146,12 @@ export const PALETTE = {
   groundWarm: '#d8dcb8',
   bush: '#5a6f4a',
   bushDark: '#4b5d3f',
-  mountain: ['#c8d5b9', '#b8c8a8', '#d4deca'],
-  mountainLine: '#8a9a7a',
+  mountain: ['#a8bc98', '#b8c8a8', '#98b090'],
+  mountainShadow: '#8aa080',
+  cloud: '#f0e8cc',
+  cloudShade: '#e5dcc0',
   grass: '#9bab7a',
+  fern: '#b4c494',
   cattailStalk: '#8a9078',
   cattailTip: '#d4a85a',
   cattailTipBright: '#e8c060',

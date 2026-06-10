@@ -100,7 +100,7 @@ function mergeParts(parts) {
   return valid.length === 1 ? valid[0] : mergeGeometries(valid)
 }
 
-// ── 침엽수 (일러스트 주종): 긴 줄기 + 물결 층 캐노피 ──
+// ── 침엽수: 긴 줄기 + 물결 층 캐노피 (teardrop, 층이 겹쳐 이어짐) ──
 export function buildConifer(rng) {
   const h = 2.8 + rng() * 2.2
   const r0 = 0.1 + rng() * 0.05
@@ -117,7 +117,7 @@ export function buildConifer(rng) {
   for (let i = 0; i < tiers; i++) {
     canopies.push(teardropCanopy(rng, tierH, rad, y, p0 + i * 1.1))
     top = y + tierH
-    y += tierH * 0.48
+    y += tierH * 0.48 // 층 겹침 — 따로 노는 느낌 방지
     rad *= 0.62
     tierH *= 0.78
   }

@@ -34,3 +34,19 @@ export function buildCattailTip(rng) {
   g.translate(0, tipH / 2, 0)
   return g
 }
+
+/** 작은 양치·잡초 (일러스트 전경 포인트) */
+export function buildSmallFern(rng) {
+  const parts = []
+  const n = 3 + Math.floor(rng() * 2)
+  for (let i = 0; i < n; i++) {
+    const h = 0.32 + rng() * 0.42
+    const g = new THREE.PlaneGeometry(0.2, h, 1, 1)
+    g.translate(0, h / 2, 0)
+    g.rotateY(rng() * Math.PI * 2)
+    g.rotateZ((rng() - 0.5) * 0.55)
+    g.translate((rng() - 0.5) * 0.28, 0, (rng() - 0.5) * 0.22)
+    parts.push(g)
+  }
+  return mergeGeometries(parts)
+}
