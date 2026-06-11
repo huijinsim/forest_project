@@ -5,7 +5,7 @@
 export const CONFIG = {
   renderer: {
     maxPixelRatio: 2,
-    clearColor: '#edd9a0',
+    clearColor: '#f0dcc8',
   },
 
   // 줌 0 = 숲 전체(멀리), 1 = 나무 사이(가까이)
@@ -49,18 +49,21 @@ export const CONFIG = {
   interaction: {
     focusDuration: 1.35,
     returnDuration: 1.1,
-    treeCameraOffset: [0, 1.4, 5.2],
-    butterflyCameraOffset: [0, 0.35, 2.8],
+    treeCameraOffset: [0, 1.0, 10.8],
+    butterflyCameraOffset: [0, 0.45, 5.2],
     treeEnterLabel: '숲의 이야기 보기 ↗',
     butterflyEnterLabel: '나비의 속삭임 ↗',
     backLabel: '돌아가기',
   },
 
   butterflies: {
-    count: 16,
-    purple: '#9b6fd4',
-    pink: '#e878a8',
-    zone: { x: 38, yMin: 2.2, yMax: 8.5, zMin: -8, zMax: -52 },
+    count: 18,
+    purple: '#a878e8',
+    pink: '#f088b0',
+    scaleMin: 0.72,
+    scaleMax: 1.05,
+    nearRatio: 0.45,
+    zone: { x: 38, yMin: 2.0, yMax: 7.5, zNearMin: 4, zNearMax: 18, zFarMin: -42, zFarMax: -2 },
   },
 
   popups: {
@@ -93,27 +96,41 @@ export const CONFIG = {
   },
 
   light: {
-    direction: [-0.35, 0.92, 0.28],
-    color: '#fff4d8',
-    ambient: 0.7,
+    direction: [-0.22, 0.52, 0.48],
+    color: '#ffe8c0',
+    ambient: 0.84,
+    highlight: 0.14,
   },
 
   outline: {
-    width: 0.02, // 평소 고정 두께
-    color: '#2a2e26',
+    width: 0.007,
+    color: '#5a5e52',
   },
 
   fog: {
-    color: '#ead8aa',
-    near: 32,
-    far: 165,
+    color: '#f0dcc8',
+    near: 16,
+    far: 108,
   },
 
   sky: {
-    top: '#e5c582',     // 따뜻한 오크라 (하늘)
-    bottom: '#f3e5ab',  // 지평선 쪽 밝은 크림
-    horizon: '#ede0b0', // 구름·산 경계부
+    top: '#c8d0e0',
+    bottom: '#f5ddb0',
+    horizon: '#f0b890',
+    sunset: '#e89098',
     radius: 420,
+  },
+
+  // 몽환적 포스트 — 블룸·따뜻한 색감·헤이즈
+  dream: {
+    bloomThreshold: 0.48,
+    bloomStrength: 0.42,
+    bloomRadius: 3.2,
+    warmTint: 0.28,
+    warmColor: '#fff0d8',
+    lift: 0.035,
+    haze: 0.22,
+    saturation: 0.9,
   },
 
   // 구름 — 하늘에 은은하게 녹아드는 레이어
@@ -166,22 +183,27 @@ export const CONFIG = {
   ],
 
   paper: {
-    grain: 0.045,
-    vignette: 0.28,
-    vignetteSoftness: 0.48,
+    grain: 0.028,
+    vignette: 0.18,
+    vignetteSoftness: 0.62,
   },
 }
 
 // ── 팔레트: 일러스트 추출 ─────────────────────────────────
 export const PALETTE = {
-  // 짙은 침엽 (배경·원경)
-  foliageDark: ['#4b5d3f', '#526848', '#465738', '#556a47'],
+  // 짙은 침엽 (중·전경만)
+  foliageDark: ['#556848', '#5a7048', '#526040', '#607050'],
   // 밝은 잎 (중·전경)
   foliageLight: ['#7a9a5c', '#8da466', '#9bb576', '#a8c078'],
+  // 원경·안개 속 (밝고 탁한 녹색)
+  foliageMist: ['#a8b490', '#b0bc98', '#9aab82', '#b8c4a0'],
   trunk: '#8a8272',
   trunkDark: '#6e685c',
   ground: '#c8d4a8',
   groundWarm: '#d8dcb8',
+  groundPatchLight: '#d4dea8',
+  groundPatchDark: '#a8b888',
+  groundDirt: '#9a9478',
   bush: '#5a6f4a',
   bushDark: '#4b5d3f',
   mountain: ['#a8bc98', '#b8c8a8', '#98b090'],
@@ -195,15 +217,22 @@ export const PALETTE = {
   cattailTipBright: '#e8c060',
 }
 
-/** 잎 색 선택: depth 0(먼)~1(가까움) */
+/** 잎 색 선택: depth 0(먼)~1(가까움) — 원경은 안개색에 가깝게 */
 export function pickFoliageColor(rng, depth) {
   const dark = PALETTE.foliageDark
   const light = PALETTE.foliageLight
-  if (depth < 0.3) return dark[Math.floor(rng() * dark.length)]
-  if (depth < 0.55) {
-    return rng() > 0.5
-      ? dark[Math.floor(rng() * dark.length)]
+  const mist = PALETTE.foliageMist
+
+  if (depth < 0.38) return mist[Math.floor(rng() * mist.length)]
+  if (depth < 0.58) {
+    return rng() > 0.55
+      ? mist[Math.floor(rng() * mist.length)]
       : light[Math.floor(rng() * light.length)]
+  }
+  if (depth < 0.75) {
+    return rng() > 0.4
+      ? light[Math.floor(rng() * light.length)]
+      : dark[Math.floor(rng() * dark.length)]
   }
   return light[Math.floor(rng() * light.length)]
 }

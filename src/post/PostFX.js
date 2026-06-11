@@ -35,6 +35,14 @@ export class PostFX {
         uGrain: { value: CONFIG.paper.grain },
         uVignette: { value: CONFIG.paper.vignette },
         uVignetteSoftness: { value: CONFIG.paper.vignetteSoftness },
+        uBloomThreshold: { value: CONFIG.dream.bloomThreshold },
+        uBloomStrength: { value: CONFIG.dream.bloomStrength },
+        uBloomRadius: { value: CONFIG.dream.bloomRadius },
+        uWarmTint: { value: CONFIG.dream.warmTint },
+        uWarmColor: { value: new THREE.Color(CONFIG.dream.warmColor) },
+        uLift: { value: CONFIG.dream.lift },
+        uHaze: { value: CONFIG.dream.haze },
+        uSaturation: { value: CONFIG.dream.saturation },
       },
     })
 
@@ -61,6 +69,17 @@ export class PostFX {
     this.material.uniforms.uGrain.value = CONFIG.paper.grain
     this.material.uniforms.uVignette.value = CONFIG.paper.vignette
     this.material.uniforms.uVignetteSoftness.value = CONFIG.paper.vignetteSoftness
+
+    const d = CONFIG.dream
+    const u = this.material.uniforms
+    u.uBloomThreshold.value = d.bloomThreshold
+    u.uBloomStrength.value = d.bloomStrength
+    u.uBloomRadius.value = d.bloomRadius
+    u.uWarmTint.value = d.warmTint
+    u.uWarmColor.value.set(d.warmColor)
+    u.uLift.value = d.lift
+    u.uHaze.value = d.haze
+    u.uSaturation.value = d.saturation
 
     if (!this.enabled) {
       this.renderer.setRenderTarget(null)

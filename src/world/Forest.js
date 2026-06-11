@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { CONFIG, PALETTE, pickFoliageColor } from '../config.js'
 import { ToonMaterial } from '../materials/ToonMaterial.js'
 import { OutlineMaterial } from '../materials/OutlineMaterial.js'
+import { GroundMaterial } from '../materials/GroundMaterial.js'
 import { SkyMaterial } from '../materials/SkyMaterial.js'
 import { buildConifer, buildDeciduous, buildSlender, buildBush, buildTreeByKind, TREE_KINDS } from './Tree.js'
 import { buildGrassClump, buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
@@ -137,19 +138,19 @@ export class Forest {
   }
 
   _buildGround() {
-    const geo = new THREE.PlaneGeometry(900, 900)
+    const geo = new THREE.PlaneGeometry(900, 900, 1, 1)
     geo.rotateX(-Math.PI / 2)
-    const mat = this._track(new ToonMaterial({ color: PALETTE.ground, wind: false }))
-    this.scene.add(new THREE.Mesh(geo, mat))
+    const groundMat = this._track(new GroundMaterial())
+    this.scene.add(new THREE.Mesh(geo, groundMat))
 
-    // 빈터(일러스트 중앙 연한 바닥)
+    // 빈터(일러스트 중앙 연한 바닥) — 질감 위에 살짝 밝게
     const [cx, cz] = CONFIG.forest.clearingCenter
     const pad = new THREE.Mesh(
       new THREE.CircleGeometry(CONFIG.forest.clearingRadius + 1.5, 24),
       this._track(new ToonMaterial({ color: PALETTE.groundWarm, wind: false })),
     )
     pad.rotation.x = -Math.PI / 2
-    pad.position.set(cx, 0.02, cz)
+    pad.position.set(cx, 0.015, cz)
     this.scene.add(pad)
   }
 

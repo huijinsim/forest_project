@@ -1,18 +1,17 @@
 // ─────────────────────────────────────────────────────────────
-// outline.frag ─ 잉크 외곽선 (원경에서 안개에 녹음)
+// ground.vert — 바닥 (월드 XZ를 프래그먼트로 전달)
 // ─────────────────────────────────────────────────────────────
 
-uniform vec3 uInk;
-uniform vec3 uFogColor;
-uniform float uFogNear;
-uniform float uFogFar;
-
+varying vec3 vNormalW;
 varying float vFogDepth;
+varying vec2 vWorldXZ;
 
 void main() {
-  // 멀리 갈수록 빠르게 안개색으로 — 검은 테두리 뭉침 방지
-  float fog = smoothstep(uFogNear * 0.35, uFogFar * 0.68, vFogDepth);
-  fog = pow(fog, 0.85);
-  vec3 col = mix(uInk, uFogColor, fog);
-  gl_FragColor = vec4(col, 1.0);
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vWorldXZ = worldPos.xz;
+  vNormalW = normalize(mat3(modelMatrix) * normal);
+
+  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+  vFogDepth = -mvPos.z;
+  gl_Position = projectionMatrix * mvPos;
 }

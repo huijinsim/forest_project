@@ -32,6 +32,7 @@ export class ToonMaterial extends THREE.ShaderMaterial {
         uLightDir: { value: new THREE.Vector3(...CONFIG.light.direction).normalize() },
         uLightColor: { value: new THREE.Color(CONFIG.light.color) },
         uAmbient: { value: CONFIG.light.ambient },
+        uHighlight: { value: CONFIG.light.highlight },
 
         uFogColor: { value: new THREE.Color(CONFIG.fog.color) },
         uFogNear: { value: CONFIG.fog.near },
@@ -49,6 +50,7 @@ export class ToonMaterial extends THREE.ShaderMaterial {
     u.uWindFreq.value = CONFIG.wind.frequency
     u.uWindAmp.value = this._wind ? CONFIG.wind.amplitude : 0
     u.uAmbient.value = CONFIG.light.ambient
+    u.uHighlight.value = CONFIG.light.highlight
     u.uFogNear.value = CONFIG.fog.near
     u.uFogFar.value = CONFIG.fog.far
   }

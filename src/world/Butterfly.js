@@ -3,7 +3,7 @@ import { CONFIG } from '../config.js'
 import { ToonMaterial } from '../materials/ToonMaterial.js'
 
 // ─────────────────────────────────────────────────────────────
-// Butterfly — 보라·핑크 나비 (나무 사이 비행)
+// Butterfly — 보라·핑크 나비 (나무 사이, 자연 크기)
 // ─────────────────────────────────────────────────────────────
 
 function buildWing() {
@@ -58,13 +58,22 @@ export class Butterflies {
       const { group, leftWing, rightWing, mat } = buildButterflyMesh(color, outlineMat)
       this.materials.push(mat)
 
-      const anchor = treeSlots[Math.floor(rng() * Math.max(1, treeSlots.length))] ?? { x: 0, z: -20 }
-      const x = THREE.MathUtils.clamp(anchor.x + (rng() - 0.5) * zone.x * 0.5, -zone.x, zone.x)
-      const z = THREE.MathUtils.clamp(anchor.z + (rng() - 0.5) * 20, zone.zMax, zone.zMin)
+      let x
+      let z
+      if (rng() < cfg.nearRatio) {
+        z = zone.zNearMin + rng() * (zone.zNearMax - zone.zNearMin)
+        x = (rng() * 2 - 1) * zone.x * 0.5
+      } else {
+        const anchor = treeSlots[Math.floor(rng() * Math.max(1, treeSlots.length))] ?? { x: 0, z: -20 }
+        x = THREE.MathUtils.clamp(anchor.x + (rng() - 0.5) * zone.x * 0.5, -zone.x, zone.x)
+        z = THREE.MathUtils.clamp(anchor.z + (rng() - 0.5) * 14, zone.zFarMin, zone.zFarMax)
+      }
+
       const y = zone.yMin + rng() * (zone.yMax - zone.yMin)
+      const scale = cfg.scaleMin + rng() * (cfg.scaleMax - cfg.scaleMin)
 
       group.position.set(x, y, z)
-      group.scale.setScalar(0.85 + rng() * 0.35)
+      group.scale.setScalar(scale)
       group.rotation.y = rng() * Math.PI * 2
 
       group.traverse((o) => {
@@ -84,17 +93,17 @@ export class Butterflies {
         leftWing,
         rightWing,
         phase: rng() * Math.PI * 2,
-        speed: 0.35 + rng() * 0.45,
+        speed: 0.32 + rng() * 0.4,
         wingSpeed: 8 + rng() * 6,
         path: {
           ax: x,
           az: z,
-          bx: x + (rng() - 0.5) * 14,
-          bz: z + (rng() - 0.5) * 10,
-          cx: x + (rng() - 0.5) * 10,
-          cz: z + (rng() - 0.5) * 14,
+          bx: x + (rng() - 0.5) * 8,
+          bz: z + (rng() - 0.5) * 6,
+          cx: x + (rng() - 0.5) * 6,
+          cz: z + (rng() - 0.5) * 8,
           yBase: y,
-          yAmp: 0.35 + rng() * 0.55,
+          yAmp: 0.25 + rng() * 0.45,
         },
       })
     }
