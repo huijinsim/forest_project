@@ -181,9 +181,21 @@ export function buildBush(rng, dark = false) {
       ),
     )
   }
-  return { foliage: mergeParts(parts), kind: dark ? 'bushDark' : 'bush' }
+  return { foliage: mergeParts(parts), height: 1.2, kind: 'bush' }
 }
 
-// 별칭
-export const buildBroadleaf = buildDeciduous
-export const buildTiered = buildConifer
+// ── 나무 4종 ─────────────────────────────────────────────
+export const TREE_KINDS = ['conifer', 'deciduous', 'slender', 'bush']
+
+export function buildTreeByKind(rng, kind) {
+  switch (kind) {
+    case 'deciduous':
+      return buildDeciduous(rng)
+    case 'slender':
+      return buildSlender(rng)
+    case 'bush':
+      return buildBush(rng, rng() > 0.45)
+    default:
+      return buildConifer(rng)
+  }
+}

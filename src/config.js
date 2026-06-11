@@ -18,31 +18,69 @@ export const CONFIG = {
     close: {
       position: [0, 4.2, 17],
       target: [0, 3.8, -16],
-      fov: 46,  // 넓게 → 캐노피 상하 잘림 방지
+      fov: 46,
     },
     zoom: {
-      value: 0,       // 0~1, UI·휠이 갱신
-      speed: 0.0014,  // 휠 감도
+      value: 0.78,
+      default: 0.78,
+      locked: false,
+      speed: 0.0014,
       damping: 0.1,
     },
-    // X축 이동(좌우 패닝) — 카메라·시선을 함께 밀어 숲을 가로로 탐색
     pan: {
       value: 0,
+      default: 0,
       min: -62,
       max: 62,
       wheelSpeed: 0.035,
-      keySpeed: 24,   // 화살표 키 (유닛/초)
+      keySpeed: 24,
       damping: 0.1,
     },
     near: 0.1,
     far: 800,
   },
 
+  intro: {
+    title: 'Ethereal Forest',
+    subtitle: '숲 속으로 들어가기',
+    enterLabel: 'Enter the Forest',
+  },
+
+  interaction: {
+    focusDuration: 1.35,
+    returnDuration: 1.1,
+    treeCameraOffset: [0, 1.4, 5.2],
+    butterflyCameraOffset: [0, 0.35, 2.8],
+    treeEnterLabel: '숲의 이야기 보기 ↗',
+    butterflyEnterLabel: '나비의 속삭임 ↗',
+    backLabel: '돌아가기',
+  },
+
+  butterflies: {
+    count: 16,
+    purple: '#9b6fd4',
+    pink: '#e878a8',
+    zone: { x: 38, yMin: 2.2, yMax: 8.5, zMin: -8, zMax: -52 },
+  },
+
+  popups: {
+    green: {
+      bg: '#4a7a48',
+      title: '숲의 이야기',
+      body: '고요한 나무 사이, 바람과 빛이 속삭입니다.',
+    },
+    pink: {
+      bg: '#c96a8a',
+      title: '나비의 속삭임',
+      body: '보랏빛·분홍빛 날개가 숲을 가로지릅니다.',
+    },
+  },
+
   parallax: {
-    strength: 1.1,
+    strength: 1.0,
     damping: 0.05,
-    look: 0.55,
-    breathe: 0.18,
+    look: 0.45,
+    breathe: 0.12,
     breatheSpeed: 0.16,
   },
 

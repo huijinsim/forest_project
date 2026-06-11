@@ -3,11 +3,12 @@ import { CONFIG, PALETTE, pickFoliageColor } from '../config.js'
 import { ToonMaterial } from '../materials/ToonMaterial.js'
 import { OutlineMaterial } from '../materials/OutlineMaterial.js'
 import { SkyMaterial } from '../materials/SkyMaterial.js'
-import { buildConifer, buildDeciduous, buildSlender, buildBush } from './Tree.js'
+import { buildConifer, buildDeciduous, buildSlender, buildBush, buildTreeByKind, TREE_KINDS } from './Tree.js'
 import { buildGrassClump, buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
 import { CloudMaterial } from '../materials/CloudMaterial.js'
 import { buildCloudByVariant } from './Cloud.js'
 import { buildMountain, buildMountainRidge } from './Mountain.js'
+import { Butterflies } from './Butterfly.js'
 
 function mulberry32(seed) {
   let a = seed >>> 0
@@ -27,6 +28,8 @@ function estimateCanopyRadius(proto, scale) {
       return (0.5 + 0.06) * scale
     case 'deciduous':
       return (1.28 + 0.22) * scale
+    case 'bush':
+      return (0.52 + 0.12) * scale
     default:
       return (1.48 + 0.32) * scale
   }
@@ -38,6 +41,8 @@ export class Forest {
     this.scene = new THREE.Scene()
     this.rng = mulberry32(CONFIG.forest.seed)
     this.materials = []
+    this.pickables = []
+    this.treeGroups = []
 
     this._initMaterials()
     this._buildSky()
@@ -48,6 +53,7 @@ export class Forest {
     this._buildTreeGrid()
     this._buildUnderstory()
     this._buildForeground()
+    this.butterflies = new Butterflies(this.scene, this.rng, this.treeSlots, this.outlineMat)
   }
 
   _track(mat) {
@@ -180,20 +186,36 @@ export class Forest {
     this.treeSlots.push({ x, z, r: radius })
   }
 
+  _tagInteractive(mesh, type, root) {
+    mesh.userData.interactive = type
+    mesh.userData.root = root
+    this.pickables.push(mesh)
+  }
+
   _addTree(proto, foliageMat, x, z, scale, rotY, trunkMat = this.trunkMat) {
     const g = new THREE.Group()
     g.position.set(x, 0, z)
     g.rotation.y = rotY
     g.scale.setScalar(scale)
+    g.userData.interactive = 'tree'
+    g.userData.root = g
+    g.userData.focusY = (proto.height ?? 1.4) * scale * 0.45
 
     const add = (geo, mat, outline = true) => {
-      g.add(new THREE.Mesh(geo, mat))
-      if (outline) g.add(new THREE.Mesh(geo, this.outlineMat))
+      const mesh = new THREE.Mesh(geo, mat)
+      g.add(mesh)
+      this._tagInteractive(mesh, 'tree', g)
+      if (outline) {
+        const ol = new THREE.Mesh(geo, this.outlineMat)
+        g.add(ol)
+      }
     }
 
-    add(proto.trunk, trunkMat)
-    add(proto.foliage, foliageMat)
+    if (proto.trunk) add(proto.trunk, trunkMat)
+    const folMat = proto.kind === 'bush' ? this.bushMat : foliageMat
+    add(proto.foliage, folMat)
     this.scene.add(g)
+    this.treeGroups.push(g)
     this._registerTree(x, z, estimateCanopyRadius(proto, scale))
   }
 
@@ -210,25 +232,37 @@ export class Forest {
     const rng = this.rng
     const [cx, cz] = f.clearingCenter
     this.treeSlots = []
+    this.protosByKind = {}
 
-    this.protosConifer = []
-    this.protosDeciduous = []
-    this.protosSlender = []
-    for (let i = 0; i < 12; i++) this.protosConifer.push(buildConifer(rng))
-    for (let i = 0; i < 10; i++) this.protosDeciduous.push(buildDeciduous(rng))
-    for (let i = 0; i < 8; i++) this.protosSlender.push(buildSlender(rng))
+    for (const kind of TREE_KINDS) {
+      this.protosByKind[kind] = []
+      for (let i = 0; i < 10; i++) this.protosByKind[kind].push(buildTreeByKind(rng, kind))
+    }
+
+    this._pickKind = (depth) => {
+      if (depth < 0.22) return rng() < 0.5 ? 'slender' : 'bush'
+      if (depth < 0.45) {
+        const r = rng()
+        if (r < 0.3) return 'bush'
+        if (r < 0.6) return 'slender'
+        return 'conifer'
+      }
+      if (depth < 0.72) {
+        const r = rng()
+        if (r < 0.12) return 'bush'
+        if (r < 0.52) return 'conifer'
+        return 'deciduous'
+      }
+      const r = rng()
+      if (r < 0.1) return 'bush'
+      if (r < 0.48) return 'deciduous'
+      return 'conifer'
+    }
 
     this._pickProto = (depth) => {
-      if (depth < 0.28) return this.protosSlender[Math.floor(rng() * this.protosSlender.length)]
-      if (depth < 0.55) return this.protosConifer[Math.floor(rng() * this.protosConifer.length)]
-      if (depth < 0.78) {
-        return rng() > 0.35
-          ? this.protosConifer[Math.floor(rng() * this.protosConifer.length)]
-          : this.protosDeciduous[Math.floor(rng() * this.protosDeciduous.length)]
-      }
-      return rng() > 0.4
-        ? this.protosDeciduous[Math.floor(rng() * this.protosDeciduous.length)]
-        : this.protosConifer[Math.floor(rng() * this.protosConifer.length)]
+      const kind = this._pickKind(depth)
+      const arr = this.protosByKind[kind]
+      return arr[Math.floor(rng() * arr.length)]
     }
 
     let placed = 0
@@ -260,7 +294,7 @@ export class Forest {
     }
 
     // ── 좌우 프레이밍 ──
-    const big = () => this.protosConifer[Math.floor(rng() * this.protosConifer.length)]
+    const big = () => this.protosByKind.conifer[Math.floor(rng() * this.protosByKind.conifer.length)]
     const frameColor = PALETTE.foliageDark[0]
     const frameTrees = [
       [big(), frameColor, -12, 7, 1.85, 0.35],
@@ -307,9 +341,7 @@ export class Forest {
         if (Math.sqrt(dx * dx + dz * dz) < f.clearingRadius) continue
 
         const depth = (z - f.zFar) / (f.zNear - f.zFar)
-        const proto = depth < 0.3
-          ? this.protosSlender[Math.floor(rng() * this.protosSlender.length)]
-          : this._pickProto(depth)
+        const proto = this._pickProto(depth)
 
         const color = pickFoliageColor(rng, depth)
         const s = THREE.MathUtils.clamp(0.65 + rng() * 0.5, f.minTreeScale, f.maxTreeScale * 0.9)
@@ -415,10 +447,15 @@ export class Forest {
 
   update(elapsed) {
     for (const m of this.materials) m.update(elapsed)
-    // 구름 그룹 좌우 표류 (천천히)
+    this.butterflies?.update(elapsed)
+    this.butterflies?.updateMaterials(elapsed)
     for (const c of this.cloudEntries) {
       c.group.position.x = c.baseX + Math.sin(elapsed * c.speed + c.phase) * c.amp
     }
+  }
+
+  getPickables() {
+    return [...this.pickables, ...(this.butterflies?.pickables ?? [])]
   }
 
   dispose() {
