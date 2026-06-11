@@ -2,31 +2,20 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // ─────────────────────────────────────────────────────────────
-// Tree — 산속 숲 일러스트 레퍼런스 기반 절차 지오메트리
-//   · 침엽: 물결 가장리(teardrop) 층 캐노피 — 일러스트 주 나무
-//   · 활엽: 가지 + 둥근 스캘럽 캐노피
-//   · 원경: 가느다란 기둥 + 작은 캐노피
-// Lathe + 정점 스캘럽으로 기하 도형 느낌을 줄인다.
+// Tree — 레퍼런스 침엽수 (층状 스커트 + 수직 그라데이션)
 // ─────────────────────────────────────────────────────────────
 
-const TMP = new THREE.Vector3()
-
-function phase(rng, n = 0) {
-  return rng() * Math.PI * 2 + n * 2.13
-}
-
-/** 수평 단면 스캘럽(물결 테두리) */
-function scallop(theta, phaseOff, lobes = 7) {
+/** 수평 단면 물결 — 깃털 가장자리 */
+function scallop(theta, phaseOff, lobes = 9) {
   return (
     1 +
-    0.11 * Math.sin(theta * lobes + phaseOff) +
-    0.06 * Math.sin(theta * (lobes + 3) + phaseOff * 1.4) +
-    0.03 * Math.sin(theta * (lobes - 2) + phaseOff * 0.6)
+    0.14 * Math.sin(theta * lobes + phaseOff) +
+    0.07 * Math.sin(theta * (lobes + 4) + phaseOff * 1.3) +
+    0.04 * Math.sin(theta * (lobes - 3) + phaseOff * 0.7)
   )
 }
 
-/** Lathe 프로필에 스캘럽 적용 */
-function applyScallop(g, phaseOff) {
+function applyScallop(g, phaseOff, lobes = 9) {
   const pos = g.attributes.position
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i)
@@ -34,65 +23,63 @@ function applyScallop(g, phaseOff) {
     const z = pos.getZ(i)
     const r = Math.sqrt(x * x + z * z)
     if (r < 0.02) continue
-    const s = scallop(Math.atan2(z, x), phaseOff)
+    const s = scallop(Math.atan2(z, x), phaseOff, lobes)
     pos.setXYZ(i, x * s, y, z * s)
   }
   g.computeVertexNormals()
   return g
 }
 
-/** 물방울/타원형 캐노피 (침엽수) — 위로 길고 가장자리 물결 */
-function teardropCanopy(rng, height, radius, y0, phaseOff) {
-  const steps = 16
+/** 층 하단 톱니 — 레퍼런스 깃털 끝 */
+function applyJaggedHem(g, y0, band, phaseOff) {
+  const pos = g.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    if (y > y0 + band) continue
+    const r = Math.sqrt(x * x + z * z)
+    if (r < 0.02) continue
+    const t = THREE.MathUtils.clamp((y - y0) / band, 0, 1)
+    const theta = Math.atan2(z, x)
+    const jag =
+      1 +
+      0.2 * Math.sin(theta * 16 + phaseOff) +
+      0.1 * Math.sin(theta * 24 + phaseOff * 1.2)
+    const k = 1.0 + (jag - 1.0) * (1.0 - t)
+    pos.setXYZ(i, x * k, y, z * k)
+  }
+  g.computeVertexNormals()
+  return g
+}
+
+/** 침엽 층 하나 — 아래 넓고 위 좁은 스커트 */
+function buildConiferTier(rng, y0, h, rBottom, rTop, phaseOff) {
+  const steps = 24
   const pts = []
   for (let i = 0; i <= steps; i++) {
     const t = i / steps
-    const y = y0 + height * t
-    // sin 프로필: 아래 좁고 중간 넓고 꼭대기 뾰족
-    const bulge = Math.pow(Math.sin(t * Math.PI), 0.82)
-    const r = radius * bulge * (0.94 + 0.06 * Math.sin(t * 9 + phaseOff))
+    const y = y0 + h * t
+    const flare = Math.exp(-Math.pow((t - 0.1) / 0.16, 2.0)) * 0.22 + 1.0
+    const cone = THREE.MathUtils.lerp(rBottom, rTop, Math.pow(t, 0.78))
+    const r = cone * flare * (0.94 + 0.06 * Math.sin(t * 11 + phaseOff))
     pts.push(new THREE.Vector2(Math.max(0.02, r), y))
   }
-  const g = new THREE.LatheGeometry(pts, 16)
-  return applyScallop(g, phaseOff)
-}
-
-/** 둥근 캐노피 (활엽·덤불) */
-function roundCanopy(rng, radius, height, y0, phaseOff) {
-  const steps = 12
-  const pts = []
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps
-    const y = y0 + height * t
-    const bulge = Math.sin(t * Math.PI)
-    const r = radius * (0.35 + 0.65 * bulge)
-    pts.push(new THREE.Vector2(r, y))
-  }
-  const g = new THREE.LatheGeometry(pts, 14)
-  return applyScallop(g, phaseOff + 0.5)
-}
-
-/** 줄기 */
-function trunk(rng, height, radius, lean = 0) {
-  const pts = []
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8
-    const r = radius * (1.08 - t * 0.52)
-    pts.push(new THREE.Vector2(r, height * t))
-  }
-  const g = new THREE.LatheGeometry(pts, 8)
-  g.translate(lean * height * 0.25, 0, 0)
+  const g = new THREE.LatheGeometry(pts, 24)
+  applyScallop(g, phaseOff)
+  applyJaggedHem(g, y0, h * 0.18, phaseOff)
   return g
 }
 
-/** 가지 하나 */
-function branch(length, tiltZ, tiltX, y) {
-  const g = new THREE.CylinderGeometry(0.04, 0.07, length, 6)
-  g.translate(0, length / 2, 0)
-  g.rotateZ(tiltZ)
-  g.rotateX(tiltX)
-  g.translate(0, y, 0)
-  return g
+/** 원통형 줄기 */
+function buildTrunk(h, radius) {
+  const pts = []
+  for (let i = 0; i <= 6; i++) {
+    const t = i / 6
+    const r = radius * (1.05 - t * 0.12)
+    pts.push(new THREE.Vector2(r, h * t))
+  }
+  return new THREE.LatheGeometry(pts, 10)
 }
 
 function mergeParts(parts) {
@@ -100,102 +87,87 @@ function mergeParts(parts) {
   return valid.length === 1 ? valid[0] : mergeGeometries(valid)
 }
 
-// ── 침엽수: 긴 줄기 + 물결 층 캐노피 (teardrop, 층이 겹쳐 이어짐) ──
-export function buildConifer(rng) {
-  const h = 2.8 + rng() * 2.2
-  const r0 = 0.1 + rng() * 0.05
-  const trunkGeo = trunk(rng, h, r0, (rng() - 0.5) * 0.08)
-  const p0 = phase(rng)
+/** 0~1 높이 attribute (그라데이션 셰이더용) */
+function addHeightAttribute(g) {
+  const pos = g.attributes.position
+  let yMin = Infinity
+  let yMax = -Infinity
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i)
+    yMin = Math.min(yMin, y)
+    yMax = Math.max(yMax, y)
+  }
+  const span = Math.max(yMax - yMin, 0.001)
+  const heights = new Float32Array(pos.count)
+  for (let i = 0; i < pos.count; i++) {
+    heights[i] = (pos.getY(i) - yMin) / span
+  }
+  g.setAttribute('aHeight', new THREE.BufferAttribute(heights, 1))
+  return g
+}
 
-  const tiers = 3 + Math.floor(rng() * 2)
+// ── 레퍼런스 침엽수: 대칭 원뿔 + 겹친 층 ──
+export function buildConifer(rng) {
+  const phase = rng() * Math.PI * 2
+  const trunkH = 1.05 + rng() * 0.35
+  const trunkR = 0.11 + rng() * 0.04
+  const trunkGeo = buildTrunk(trunkH, trunkR)
+
+  const tiers = 4 + Math.floor(rng() * 2)
   const canopies = []
-  let y = h * 0.42
-  let rad = 1.35 + rng() * 0.45
-  let tierH = 2.2 + rng() * 0.6
-  let top = y
+  let y = trunkH * 0.72
+  let tierH = 1.15 + rng() * 0.28
+  let rad = 1.35 + rng() * 0.3
 
   for (let i = 0; i < tiers; i++) {
-    canopies.push(teardropCanopy(rng, tierH, rad, y, p0 + i * 1.1))
-    top = y + tierH
-    y += tierH * 0.48 // 층 겹침 — 따로 노는 느낌 방지
-    rad *= 0.62
-    tierH *= 0.78
+    const rBot = rad
+    const rTop = rad * (0.22 + rng() * 0.12)
+    canopies.push(buildConiferTier(rng, y, tierH, rBot, rTop, phase + i * 1.05))
+    y += tierH * 0.48
+    tierH *= 0.86
+    rad *= 0.66
   }
 
-  return { trunk: trunkGeo, foliage: mergeParts(canopies), height: top, kind: 'conifer' }
-}
-
-// ── 활엽수: 가지 + 둥근 잎 덩어리 ──
-export function buildDeciduous(rng) {
-  const h = 2.4 + rng() * 1.6
-  const p0 = phase(rng, 1)
-  const trunkGeo = trunk(rng, h, 0.12 + rng() * 0.05)
-
-  const branches = []
-  const canopies = []
-  const nBranch = 2 + Math.floor(rng() * 2)
-
-  for (let i = 0; i < nBranch; i++) {
-    const by = h * (0.45 + i * 0.18)
-    const tilt = (rng() - 0.5) * 0.9
-    const len = 0.7 + rng() * 0.5
-    branches.push(branch(len, tilt, (rng() - 0.5) * 0.4, by))
-    canopies.push(
-      roundCanopy(rng, 0.75 + rng() * 0.35, 1.0 + rng() * 0.3, by + len * 0.85, p0 + i),
-    )
-  }
-
-  canopies.push(roundCanopy(rng, 1.1 + rng() * 0.4, 1.4 + rng() * 0.4, h * 0.72, p0 + 3))
+  const foliage = addHeightAttribute(mergeParts(canopies))
 
   return {
-    trunk: mergeParts([trunkGeo, ...branches]),
-    foliage: mergeParts(canopies),
-    height: h + 2.2,
-    kind: 'deciduous',
+    trunk: trunkGeo,
+    foliage,
+    height: y + tierH * 0.3,
+    kind: 'conifer',
+    foliageOutline: false,
   }
 }
 
-// ── 원경 기둥 (밀집 숲 깊이) ──
-export function buildSlender(rng) {
-  const h = 5 + rng() * 4
-  const trunkGeo = trunk(rng, h, 0.05 + rng() * 0.02)
-  const p0 = phase(rng, 2)
-  const y = h * 0.78
-  const foliage = teardropCanopy(rng, 1.4 + rng() * 0.5, 0.45 + rng() * 0.2, y, p0)
-  return { trunk: trunkGeo, foliage, height: y + 1.5, kind: 'slender' }
+// ── 우선 1종만 사용 ──
+export const TREE_KINDS = ['conifer']
+
+export function buildTreeByKind(rng, kind = 'conifer') {
+  return buildConifer(rng)
 }
 
-// ── 작은 덤불 (지면층) ──
-export function buildBush(rng, dark = false) {
-  const p0 = phase(rng, 3)
+// 레거시 export
+export const buildDeciduous = buildConifer
+export const buildSlender = buildConifer
+
+/** 지면 관목 (나무 1종과 별도) */
+export function buildBush(rng) {
+  const phase = rng() * Math.PI * 2
   const n = 2 + Math.floor(rng() * 2)
   const parts = []
   for (let i = 0; i < n; i++) {
-    parts.push(
-      roundCanopy(
-        rng,
-        0.45 + rng() * 0.3,
-        0.5 + rng() * 0.25,
-        0.1 + i * 0.15,
-        p0 + i,
-      ),
-    )
+    const steps = 10
+    const pts = []
+    const r = 0.42 + rng() * 0.28
+    const h = 0.48 + rng() * 0.22
+    const y0 = 0.08 + i * 0.12
+    for (let j = 0; j <= steps; j++) {
+      const t = j / steps
+      const y = y0 + h * t
+      const bulge = Math.sin(t * Math.PI)
+      pts.push(new THREE.Vector2(r * (0.35 + 0.65 * bulge), y))
+    }
+    parts.push(applyScallop(new THREE.LatheGeometry(pts, 12), phase + i))
   }
-  return { foliage: mergeParts(parts), height: 1.2, kind: 'bush' }
-}
-
-// ── 나무 4종 ─────────────────────────────────────────────
-export const TREE_KINDS = ['conifer', 'deciduous', 'slender', 'bush']
-
-export function buildTreeByKind(rng, kind) {
-  switch (kind) {
-    case 'deciduous':
-      return buildDeciduous(rng)
-    case 'slender':
-      return buildSlender(rng)
-    case 'bush':
-      return buildBush(rng, rng() > 0.45)
-    default:
-      return buildConifer(rng)
-  }
+  return { foliage: mergeParts(parts), height: 1.0, kind: 'bush', foliageOutline: true }
 }

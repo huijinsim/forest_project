@@ -1,15 +1,16 @@
 import * as THREE from 'three'
-import { CONFIG, PALETTE, pickFoliageColor } from '../config.js'
+import { CONFIG, PALETTE } from '../config.js'
 import { ToonMaterial } from '../materials/ToonMaterial.js'
 import { OutlineMaterial } from '../materials/OutlineMaterial.js'
 import { GroundMaterial } from '../materials/GroundMaterial.js'
 import { SkyMaterial } from '../materials/SkyMaterial.js'
-import { buildConifer, buildDeciduous, buildSlender, buildBush, buildTreeByKind, TREE_KINDS } from './Tree.js'
+import { buildBush } from './Tree.js'
 import { buildGrassClump, buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
 import { CloudMaterial } from '../materials/CloudMaterial.js'
 import { buildCloudByVariant } from './Cloud.js'
 import { buildMountain, buildMountainRidge } from './Mountain.js'
 import { Butterflies } from './Butterfly.js'
+import { createTreeInstances, treeFocusRoot } from './TreeModel.js'
 
 function mulberry32(seed) {
   let a = seed >>> 0
@@ -22,28 +23,16 @@ function mulberry32(seed) {
   }
 }
 
-/** 나무 캐노피 XZ 반경 추정 (scale 적용 후) */
-function estimateCanopyRadius(proto, scale) {
-  switch (proto.kind) {
-    case 'slender':
-      return (0.5 + 0.06) * scale
-    case 'deciduous':
-      return (1.28 + 0.22) * scale
-    case 'bush':
-      return (0.52 + 0.12) * scale
-    default:
-      return (1.48 + 0.32) * scale
-  }
-}
-
-
 export class Forest {
-  constructor() {
+  /** @param {Awaited<ReturnType<import('./TreeModel.js').loadTreeTemplate>>} treeTemplate */
+  constructor(treeTemplate) {
     this.scene = new THREE.Scene()
     this.rng = mulberry32(CONFIG.forest.seed)
     this.materials = []
     this.pickables = []
-    this.treeGroups = []
+    this.treeTemplate = treeTemplate
+    this.treePlacements = []
+    this.treeInstancedMesh = null
 
     this._initMaterials()
     this._buildSky()
@@ -52,6 +41,7 @@ export class Forest {
     this._buildMountains()
     this._buildTrees()
     this._buildTreeGrid()
+    this._buildTreeInstances()
     this._buildUnderstory()
     this._buildForeground()
     this.butterflies = new Butterflies(this.scene, this.rng, this.treeSlots, this.outlineMat)
@@ -63,17 +53,8 @@ export class Forest {
   }
 
   _initMaterials() {
-    const foliageColors = [...PALETTE.foliageDark, ...PALETTE.foliageLight]
-    this.foliageMatMap = new Map()
-    for (const c of foliageColors) {
-      this.foliageMatMap.set(c, this._track(new ToonMaterial({ color: c, wind: true })))
-    }
-
-    this.trunkMat = this._track(new ToonMaterial({ color: PALETTE.trunk, wind: true }))
-    this.trunkDarkMat = this._track(new ToonMaterial({ color: PALETTE.trunkDark, wind: true }))
     this.outlineMat = this._track(new OutlineMaterial(true))
     this.bushMat = this._track(new ToonMaterial({ color: PALETTE.bush, wind: true }))
-    this.bushDarkMat = this._track(new ToonMaterial({ color: PALETTE.bushDark, wind: true }))
     this.grassMat = this._track(new ToonMaterial({ color: PALETTE.grass, wind: true }))
     this.fernMat = this._track(new ToonMaterial({ color: PALETTE.fern, wind: true }))
     this.cattailStalkMat = this._track(new ToonMaterial({ color: PALETTE.cattailStalk, wind: true }))
@@ -81,10 +62,6 @@ export class Forest {
     this.cloudMat = this._track(new CloudMaterial(PALETTE.cloud))
     this.cloudShadeMat = this._track(new CloudMaterial(PALETTE.cloudShade))
     this.cloudEntries = []
-  }
-
-  _foliageMat(color) {
-    return this.foliageMatMap.get(color) ?? this.foliageMatMap.values().next().value
   }
 
   _buildSky() {
@@ -96,7 +73,6 @@ export class Forest {
     this.scene.add(sky)
   }
 
-  /** 일러스트 뭉게구름 — 하늘(오크라)과 산(민트) 사이 레이어 */
   _buildClouds() {
     const rng = this.rng
     const cfg = CONFIG.clouds
@@ -124,7 +100,6 @@ export class Forest {
       addCloud(x, y, z, scale, variant, shade)
     })
 
-    // 하늘에 흩뿌리는 보조 구름
     for (let i = 0; i < cfg.scatter; i++) {
       addCloud(
         (rng() * 2 - 1) * 130,
@@ -143,7 +118,6 @@ export class Forest {
     const groundMat = this._track(new GroundMaterial())
     this.scene.add(new THREE.Mesh(geo, groundMat))
 
-    // 빈터(일러스트 중앙 연한 바닥) — 질감 위에 살짝 밝게
     const [cx, cz] = CONFIG.forest.clearingCenter
     const pad = new THREE.Mesh(
       new THREE.CircleGeometry(CONFIG.forest.clearingRadius + 1.5, 24),
@@ -187,45 +161,31 @@ export class Forest {
     this.treeSlots.push({ x, z, r: radius })
   }
 
-  _tagInteractive(mesh, type, root) {
-    mesh.userData.interactive = type
-    mesh.userData.root = root
-    this.pickables.push(mesh)
-  }
-
-  _addTree(proto, foliageMat, x, z, scale, rotY, trunkMat = this.trunkMat) {
-    const g = new THREE.Group()
-    g.position.set(x, 0, z)
-    g.rotation.y = rotY
-    g.scale.setScalar(scale)
-    g.userData.interactive = 'tree'
-    g.userData.root = g
-    g.userData.focusY = (proto.height ?? 1.4) * scale * 0.45
-
-    const add = (geo, mat, outline = true) => {
-      const mesh = new THREE.Mesh(geo, mat)
-      g.add(mesh)
-      this._tagInteractive(mesh, 'tree', g)
-      if (outline) {
-        const ol = new THREE.Mesh(geo, this.outlineMat)
-        g.add(ol)
-      }
-    }
-
-    if (proto.trunk) add(proto.trunk, trunkMat)
-    const folMat = proto.kind === 'bush' ? this.bushMat : foliageMat
-    add(proto.foliage, folMat)
-    this.scene.add(g)
-    this.treeGroups.push(g)
-    this._registerTree(x, z, estimateCanopyRadius(proto, scale))
-  }
-
-  /** 캐노피 겹침 없을 때만 배치 */
-  _tryAddTree(proto, foliageMat, x, z, scale, rotY, trunkMat = this.trunkMat) {
-    const r = estimateCanopyRadius(proto, scale)
+  /** GLB 나무 배치 기록 (InstancedMesh는 나중에 한 번에 생성) */
+  _tryAddTree(x, z, scale, rotY) {
+    const r = this.treeTemplate.radius * scale
     if (!this._canPlaceTree(x, z, r)) return false
-    this._addTree(proto, foliageMat, x, z, scale, rotY, trunkMat)
+    this.treePlacements.push({
+      x,
+      z,
+      scale,
+      rotY,
+      focusY: this.treeTemplate.height * scale * 0.45,
+    })
+    this._registerTree(x, z, r)
     return true
+  }
+
+  _buildTreeInstances() {
+    if (!this.treePlacements.length) return
+    this.treeInstancedMesh = createTreeInstances(this.treeTemplate, this.treePlacements)
+    this._track(this.treeInstancedMesh.material)
+    this.scene.add(this.treeInstancedMesh)
+    this.pickables.push(this.treeInstancedMesh)
+  }
+
+  getTreeFocusRoot(instanceId) {
+    return treeFocusRoot(this.treePlacements[instanceId])
   }
 
   _buildTrees() {
@@ -233,43 +193,10 @@ export class Forest {
     const rng = this.rng
     const [cx, cz] = f.clearingCenter
     this.treeSlots = []
-    this.protosByKind = {}
-
-    for (const kind of TREE_KINDS) {
-      this.protosByKind[kind] = []
-      for (let i = 0; i < 10; i++) this.protosByKind[kind].push(buildTreeByKind(rng, kind))
-    }
-
-    this._pickKind = (depth) => {
-      if (depth < 0.22) return rng() < 0.5 ? 'slender' : 'bush'
-      if (depth < 0.45) {
-        const r = rng()
-        if (r < 0.3) return 'bush'
-        if (r < 0.6) return 'slender'
-        return 'conifer'
-      }
-      if (depth < 0.72) {
-        const r = rng()
-        if (r < 0.12) return 'bush'
-        if (r < 0.52) return 'conifer'
-        return 'deciduous'
-      }
-      const r = rng()
-      if (r < 0.1) return 'bush'
-      if (r < 0.48) return 'deciduous'
-      return 'conifer'
-    }
-
-    this._pickProto = (depth) => {
-      const kind = this._pickKind(depth)
-      const arr = this.protosByKind[kind]
-      return arr[Math.floor(rng() * arr.length)]
-    }
 
     let placed = 0
     let guard = 0
 
-    // ── 층별 배치 — 캐노피 겹침 검사 ──
     while (placed < f.treeCount && guard < f.treeCount * 120) {
       guard++
       const row = Math.floor(rng() * f.rows)
@@ -282,45 +209,32 @@ export class Forest {
       if (Math.sqrt(dx * dx + dz * dz) < f.clearingRadius) continue
 
       const depth = (z - f.zFar) / (f.zNear - f.zFar)
-      const color = pickFoliageColor(rng, depth)
-      const proto = this._pickProto(depth)
       const raw = (0.7 + rng() * 0.55) * (0.55 + depth * 0.6)
       const s = THREE.MathUtils.clamp(raw, f.minTreeScale, f.maxTreeScale)
-      const tMat = depth < 0.35 ? this.trunkDarkMat : this.trunkMat
 
-      if (!this._tryAddTree(proto, this._foliageMat(color), x, z, s, rng() * Math.PI * 2, tMat)) {
-        continue
-      }
+      if (!this._tryAddTree(x, z, s, rng() * Math.PI * 2)) continue
       placed++
     }
 
-    // ── 좌우 프레이밍 ──
-    const big = () => this.protosByKind.conifer[Math.floor(rng() * this.protosByKind.conifer.length)]
-    const frameColor = PALETTE.foliageDark[0]
     const frameTrees = [
-      [big(), frameColor, -12, 7, 1.85, 0.35],
-      [big(), frameColor, 12.5, 8, 1.95, -0.4],
-      [big(), PALETTE.foliageLight[1], -8, 5, 1.55, 0.2],
-      [big(), PALETTE.foliageLight[2], 8.5, 6, 1.6, -0.25],
+      [-12, 7, 1.85, 0.35],
+      [12.5, 8, 1.95, -0.4],
+      [-8, 5, 1.55, 0.2],
+      [8.5, 6, 1.6, -0.25],
     ]
-    for (const [proto, color, x, z, s, rot] of frameTrees) {
-      this._tryAddTree(proto, this._foliageMat(color), x, z, s, rot)
+    for (const [x, z, s, rot] of frameTrees) {
+      this._tryAddTree(x, z, s, rot)
     }
 
-    // 좌우·원경 가장자리 — 숲이 둘러싸는 느낌
     for (let i = 0; i < 18; i++) {
       const side = i % 2 === 0 ? -1 : 1
       const z = f.zFar + 20 + rng() * (f.zNear - f.zFar - 30)
       const x = side * (f.areaX * (0.72 + rng() * 0.28) + rng() * 6)
-      const depth = (z - f.zFar) / (f.zNear - f.zFar)
-      const proto = this._pickProto(depth)
-      const color = pickFoliageColor(rng, depth)
       const s = THREE.MathUtils.clamp(0.85 + rng() * 0.55, f.minTreeScale, f.maxTreeScale)
-      this._tryAddTree(proto, this._foliageMat(color), x, z, s, rng() * Math.PI * 2)
+      this._tryAddTree(x, z, s, rng() * Math.PI * 2)
     }
   }
 
-  /** 그리드 보조 배치 — 빈 공간을 메워 숲을 더 빽빽하게 */
   _buildTreeGrid() {
     const f = CONFIG.forest
     const rng = this.rng
@@ -341,14 +255,8 @@ export class Forest {
         const dz = z - cz
         if (Math.sqrt(dx * dx + dz * dz) < f.clearingRadius) continue
 
-        const depth = (z - f.zFar) / (f.zNear - f.zFar)
-        const proto = this._pickProto(depth)
-
-        const color = pickFoliageColor(rng, depth)
         const s = THREE.MathUtils.clamp(0.65 + rng() * 0.5, f.minTreeScale, f.maxTreeScale * 0.9)
-        if (!this._tryAddTree(proto, this._foliageMat(color), x, z, s, rng() * Math.PI * 2)) {
-          continue
-        }
+        if (!this._tryAddTree(x, z, s, rng() * Math.PI * 2)) continue
         placed++
       }
     }
@@ -359,8 +267,7 @@ export class Forest {
     const rng = this.rng
 
     for (let i = 0; i < f.bushCount; i++) {
-      const dark = rng() > 0.45
-      const { foliage } = buildBush(rng, dark)
+      const { foliage } = buildBush(rng)
       const g = new THREE.Group()
       const depthT = rng()
       const z = f.zNear - 0.5 - rng() * (f.zNear - f.zFar - 1)
@@ -368,8 +275,7 @@ export class Forest {
       g.position.set(x, -0.05, z)
       g.scale.setScalar(0.5 + rng() * 0.95)
       g.rotation.y = rng() * Math.PI * 2
-      const mat = dark ? this.bushDarkMat : this.bushMat
-      g.add(new THREE.Mesh(foliage, mat))
+      g.add(new THREE.Mesh(foliage, this.bushMat))
       g.add(new THREE.Mesh(foliage, this.outlineMat))
       this.scene.add(g)
     }
@@ -399,7 +305,6 @@ export class Forest {
       return [(rng() * 2 - 1) * f.areaX * 0.5, 5 + rng() * 12]
     }
 
-    // 풀 — 숲 바닥 전역
     for (let i = 0; i < f.grassClumps; i++) {
       const [x, z] = pickSpot(0.35)
       const geo = buildGrassClump(rng, 4 + Math.floor(rng() * 4))
@@ -412,7 +317,6 @@ export class Forest {
       this.scene.add(g)
     }
 
-    // 갈대 — 전경·중경에 고르게
     for (let i = 0; i < f.cattails; i++) {
       const [x, z] = pickSpot(0.55)
       const h = 1.0 + rng() * 1.6
@@ -432,7 +336,6 @@ export class Forest {
       this.scene.add(g)
     }
 
-    // 작은 양치·잡초
     for (let i = 0; i < f.ferns; i++) {
       const [x, z] = pickSpot(0.4)
       const geo = buildSmallFern(rng)
@@ -460,7 +363,10 @@ export class Forest {
   }
 
   dispose() {
+    this.treeTemplate?.geometry?.dispose()
+    this.treeTemplate?.material?.dispose()
     this.scene.traverse((o) => {
+      if (o.isInstancedMesh) return
       if (o.geometry) o.geometry.dispose()
       if (o.material) o.material.dispose()
     })

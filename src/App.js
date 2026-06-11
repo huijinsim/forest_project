@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { CONFIG } from './config.js'
 import { Renderer } from './core/Renderer.js'
 import { Forest } from './world/Forest.js'
+import { loadTreeTemplate } from './world/TreeModel.js'
 import { PostFX } from './post/PostFX.js'
 import { Popup } from './ui/Popup.js'
 import { FocusCTA } from './ui/FocusCTA.js'
@@ -57,7 +58,12 @@ export class App {
     CONFIG.camera.zoom.value = CONFIG.camera.zoom.default
     CONFIG.camera.pan.value = CONFIG.camera.pan.default
 
-    this.forest = new Forest()
+    const pctEl = this.loaderEl.querySelector('.pct')
+    const treeTemplate = await loadTreeTemplate(CONFIG.forest.treeModel, (p) => {
+      if (pctEl) pctEl.textContent = `${Math.round(p * 100)}%`
+    })
+
+    this.forest = new Forest(treeTemplate)
     this.postfx = new PostFX(this.renderer.instance)
     this.resize()
     this.loaderEl.classList.add('is-hidden')
@@ -126,9 +132,17 @@ export class App {
     const hits = this._raycaster.intersectObjects(this.forest.getPickables(), false)
     if (!hits.length) return
 
-    const hit = hits[0].object
-    const type = hit.userData.interactive
-    const root = hit.userData.root
+    const hit = hits[0]
+    const obj = hit.object
+    const type = obj.userData.interactive
+
+    if (obj.userData.isInstancedTrees && hit.instanceId !== undefined) {
+      const root = this.forest.getTreeFocusRoot(hit.instanceId)
+      this._focusInteractive('tree', root)
+      return
+    }
+
+    const root = obj.userData.root
     if (!type || !root) return
 
     this._focusInteractive(type, root)

@@ -156,6 +156,13 @@ export const CONFIG = {
 
   forest: {
     seed: 2026,
+    treeModel: '/models/tree.glb',
+    treeModelHeight: 5.8,
+    treeModelMaterial: {
+      tint: '#7a9858',
+      brightness: 1.22,
+      saturation: 1.08,
+    },
     treeCount: 980,
     fillGrid: 480,
     areaX: 96,
@@ -197,8 +204,10 @@ export const PALETTE = {
   foliageLight: ['#7a9a5c', '#8da466', '#9bb576', '#a8c078'],
   // 원경·안개 속 (밝고 탁한 녹색)
   foliageMist: ['#a8b490', '#b0bc98', '#9aab82', '#b8c4a0'],
-  trunk: '#8a8272',
-  trunkDark: '#6e685c',
+  trunk: '#9a7048',
+  trunkDark: '#7a5838',
+  coniferLight: '#c8dc62',
+  coniferDark: '#2e5c32',
   ground: '#c8d4a8',
   groundWarm: '#d8dcb8',
   groundPatchLight: '#d4dea8',
