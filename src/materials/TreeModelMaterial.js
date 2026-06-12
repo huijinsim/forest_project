@@ -4,16 +4,17 @@ import vertexShader from '../shaders/treeModel.vert'
 import fragmentShader from '../shaders/treeModel.frag'
 
 // ─────────────────────────────────────────────────────────────
-// TreeModelMaterial — GLB 텍스처 + 씬 톤(툰 조명·안개) 통합
+// TreeModelMaterial — GLB 텍스처 + 바닥 톤 맞춤 셰이딩
 // ─────────────────────────────────────────────────────────────
 export class TreeModelMaterial extends THREE.ShaderMaterial {
   /**
    * @param {object} opts
    * @param {THREE.Texture|null} [opts.map]
    * @param {number} opts.treeHeight
+   * @param {object} [opts.materialCfg]
    */
-  constructor({ map = null, treeHeight }) {
-    const cfg = CONFIG.forest.treeModelMaterial
+  constructor({ map = null, treeHeight, materialCfg }) {
+    const cfg = materialCfg ?? CONFIG.forest.treeModelMaterial
     super({
       vertexShader,
       fragmentShader,
@@ -21,8 +22,11 @@ export class TreeModelMaterial extends THREE.ShaderMaterial {
         uMap: { value: map },
         uHasMap: { value: map ? 1 : 0 },
         uTint: { value: new THREE.Color(cfg.tint) },
-        uColorTop: { value: new THREE.Color(PALETTE.coniferLight) },
-        uColorBottom: { value: new THREE.Color(PALETTE.coniferDark) },
+        uColorTop: { value: new THREE.Color(cfg.colorTop ?? PALETTE.groundPatchLight) },
+        uColorBottom: { value: new THREE.Color(cfg.colorBottom ?? PALETTE.groundPatchDark) },
+        uGroundTone: { value: new THREE.Color(cfg.groundTone ?? PALETTE.ground) },
+        uGroundMix: { value: cfg.groundMix ?? 0.3 },
+        uVariation: { value: cfg.variation ?? 0.12 },
         uBrightness: { value: cfg.brightness },
         uSaturation: { value: cfg.saturation },
         uTreeHeight: { value: treeHeight },

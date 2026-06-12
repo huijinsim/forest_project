@@ -3,7 +3,7 @@ import gsap from 'gsap'
 import { CONFIG } from './config.js'
 import { Renderer } from './core/Renderer.js'
 import { Forest } from './world/Forest.js'
-import { loadTreeTemplate } from './world/TreeModel.js'
+import { loadAllTreeTemplates } from './world/TreeModel.js'
 import { PostFX } from './post/PostFX.js'
 import { Popup } from './ui/Popup.js'
 import { FocusCTA } from './ui/FocusCTA.js'
@@ -71,10 +71,10 @@ export class App {
     if (this._forestLoading) return this._forestLoading
 
     const pctEl = this.loaderEl.querySelector('.pct')
-    this._forestLoading = loadTreeTemplate(CONFIG.forest.treeModel, (p) => {
+    this._forestLoading = loadAllTreeTemplates(CONFIG.forest.treeModels, (p) => {
       if (pctEl) pctEl.textContent = `${Math.round(p * 100)}%`
-    }).then((treeTemplate) => {
-      this.forest = new Forest(treeTemplate)
+    }).then((templates) => {
+      this.forest = new Forest(templates)
       this._forestLoading = null
     })
 
@@ -162,8 +162,8 @@ export class App {
     const type = obj.userData.interactive
 
     if (obj.userData.isInstancedTrees && hit.instanceId !== undefined) {
-      const root = this.forest.getTreeFocusRoot(hit.instanceId)
-      this._focusInteractive('tree', root)
+      const root = this.forest.getTreeFocusRoot(obj, hit.instanceId)
+      if (root) this._focusInteractive('tree', root)
       return
     }
 

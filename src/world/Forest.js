@@ -24,15 +24,19 @@ function mulberry32(seed) {
 }
 
 export class Forest {
-  /** @param {Awaited<ReturnType<import('./TreeModel.js').loadTreeTemplate>>} treeTemplate */
-  constructor(treeTemplate) {
+  /** @param {Awaited<ReturnType<import('./TreeModel.js').loadAllTreeTemplates>>} treeTemplates */
+  constructor(treeTemplates) {
     this.scene = new THREE.Scene()
     this.rng = mulberry32(CONFIG.forest.seed)
     this.materials = []
     this.pickables = []
-    this.treeTemplate = treeTemplate
-    this.treePlacements = []
-    this.treeInstancedMesh = null
+    this.treeLayers = CONFIG.forest.treeModels.map((cfg, i) => ({
+      config: cfg,
+      template: treeTemplates[i],
+      placements: [],
+      instancedMesh: null,
+    }))
+    this.treeSlots = []
 
     this._initMaterials()
     this._buildSky()
@@ -160,32 +164,38 @@ export class Forest {
     this.treeSlots.push({ x, z, r: radius })
   }
 
-  /** GLB 나무 배치 기록 (InstancedMesh는 나중에 한 번에 생성) */
-  _tryAddTree(x, z, scale, rotY) {
+  /** GLB 나무 배치 — layerIdx: treeModels 순서 */
+  _tryAddTree(layerIdx, x, z, scale, rotY) {
+    const layer = this.treeLayers[layerIdx]
     const f = CONFIG.forest
-    const r = this.treeTemplate.radius * scale * f.canopyRadiusScale
+    const radiusScale = layer.config.canopyRadiusScale ?? f.canopyRadiusScale
+    const r = layer.template.radius * scale * radiusScale
     if (!this._canPlaceTree(x, z, r)) return false
-    this.treePlacements.push({
+    layer.placements.push({
       x,
       z,
       scale,
       rotY,
-      focusY: this.treeTemplate.height * scale * 0.45,
+      focusY: layer.template.height * scale * 0.45,
     })
     this._registerTree(x, z, r)
     return true
   }
 
   _buildTreeInstances() {
-    if (!this.treePlacements.length) return
-    this.treeInstancedMesh = createTreeInstances(this.treeTemplate, this.treePlacements)
-    this._track(this.treeInstancedMesh.material)
-    this.scene.add(this.treeInstancedMesh)
-    this.pickables.push(this.treeInstancedMesh)
+    for (const layer of this.treeLayers) {
+      if (!layer.placements.length) continue
+      layer.instancedMesh = createTreeInstances(layer.template, layer.placements)
+      this._track(layer.instancedMesh.material)
+      this.scene.add(layer.instancedMesh)
+      this.pickables.push(layer.instancedMesh)
+    }
   }
 
-  getTreeFocusRoot(instanceId) {
-    return treeFocusRoot(this.treePlacements[instanceId])
+  getTreeFocusRoot(mesh, instanceId) {
+    const layer = this.treeLayers.find((l) => l.instancedMesh === mesh)
+    if (!layer) return null
+    return treeFocusRoot(layer.placements[instanceId])
   }
 
   _buildTrees() {
@@ -194,26 +204,32 @@ export class Forest {
     const [cx, cz] = f.clearingCenter
     this.treeSlots = []
 
-    let placed = 0
-    let guard = 0
+    for (let li = 0; li < this.treeLayers.length; li++) {
+      const layer = this.treeLayers[li]
+      const cfg = layer.config
+      let placed = 0
+      let guard = 0
 
-    while (placed < f.treeCount && guard < f.treeCount * 120) {
-      guard++
-      const row = Math.floor(rng() * f.rows)
-      const depthT = row / (f.rows - 1 || 1)
-      const z = f.zFar + (f.zNear - f.zFar) * depthT + (rng() - 0.5) * 6
-      const x = (rng() * 2 - 1) * f.areaX * (0.6 + depthT * 0.42)
+      while (placed < cfg.count && guard < cfg.count * 120) {
+        guard++
+        const row = Math.floor(rng() * f.rows)
+        const depthT = row / (f.rows - 1 || 1)
+        const z = f.zFar + (f.zNear - f.zFar) * depthT + (rng() - 0.5) * 6
+        const x = (rng() * 2 - 1) * f.areaX * (0.6 + depthT * 0.42)
 
-      const dx = x - cx
-      const dz = z - cz
-      if (Math.sqrt(dx * dx + dz * dz) < f.clearingRadius) continue
+        const dx = x - cx
+        const dz = z - cz
+        if (Math.sqrt(dx * dx + dz * dz) < f.clearingRadius) continue
 
-      const depth = (z - f.zFar) / (f.zNear - f.zFar)
-      const raw = (0.7 + rng() * 0.55) * (0.55 + depth * 0.6)
-      const s = THREE.MathUtils.clamp(raw, f.minTreeScale, f.maxTreeScale)
+        const depth = (z - f.zFar) / (f.zNear - f.zFar)
+        const raw = (0.7 + rng() * 0.55) * (0.55 + depth * 0.6)
+        const minS = cfg.minScale ?? f.minTreeScale
+        const maxS = cfg.maxScale ?? f.maxTreeScale
+        const s = THREE.MathUtils.clamp(raw, minS, maxS) * (f.treeScaleMul ?? 1)
 
-      if (!this._tryAddTree(x, z, s, rng() * Math.PI * 2)) continue
-      placed++
+        if (!this._tryAddTree(li, x, z, s, rng() * Math.PI * 2)) continue
+        placed++
+      }
     }
   }
 
@@ -318,13 +334,16 @@ export class Forest {
   }
 
   dispose() {
-    const sharedGeo = this.treeTemplate?.geometry
-    const sharedMat = this.treeTemplate?.material
-    sharedGeo?.dispose()
-    sharedMat?.dispose()
+    const shared = new Set()
+    for (const layer of this.treeLayers) {
+      layer.template?.geometry?.dispose()
+      layer.template?.material?.dispose()
+      if (layer.template?.geometry) shared.add(layer.template.geometry)
+      if (layer.template?.material) shared.add(layer.template.material)
+    }
     this.scene.traverse((o) => {
-      if (o.geometry && o.geometry !== sharedGeo) o.geometry.dispose()
-      if (o.material && o.material !== sharedMat) o.material.dispose()
+      if (o.geometry && !shared.has(o.geometry)) o.geometry.dispose()
+      if (o.material && !shared.has(o.material)) o.material.dispose()
     })
   }
 }

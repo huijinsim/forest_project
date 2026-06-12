@@ -4,7 +4,7 @@ import { CONFIG } from '../config.js'
 import { TreeModelMaterial } from '../materials/TreeModelMaterial.js'
 
 // ─────────────────────────────────────────────────────────────
-// TreeModel — Meshy GLB 로드 + InstancedMesh 100그루
+// TreeModel — Meshy GLB 로드 + InstancedMesh 배치
 // ─────────────────────────────────────────────────────────────
 
 function normalizeTreeGeometry(geometry, targetH) {
@@ -26,10 +26,15 @@ function normalizeTreeGeometry(geometry, targetH) {
 
 /**
  * @param {string} url
+ * @param {object} [options]
+ * @param {number} [options.height]
+ * @param {object} [options.material]
  * @param {(pct:number)=>void} [onProgress]
  */
-export function loadTreeTemplate(url, onProgress) {
+export function loadTreeTemplate(url, options = {}, onProgress) {
   const loader = new GLTFLoader()
+  const height = options.height ?? CONFIG.forest.treeModelHeight
+  const materialCfg = options.material ?? CONFIG.forest.treeModelMaterial
 
   return new Promise((resolve, reject) => {
     loader.load(
@@ -40,12 +45,11 @@ export function loadTreeTemplate(url, onProgress) {
           if (o.isMesh && !src) src = o
         })
         if (!src) {
-          reject(new Error('GLB에 Mesh가 없습니다'))
+          reject(new Error(`GLB에 Mesh가 없습니다: ${url}`))
           return
         }
 
-        const targetH = CONFIG.forest.treeModelHeight
-        const geometry = normalizeTreeGeometry(src.geometry.clone(), targetH)
+        const geometry = normalizeTreeGeometry(src.geometry.clone(), height)
 
         let srcMat = src.material
         if (Array.isArray(srcMat)) srcMat = srcMat[0]
@@ -62,9 +66,9 @@ export function loadTreeTemplate(url, onProgress) {
             geometry.boundingBox.max.z - geometry.boundingBox.min.z,
           ) * 0.5
 
-        const material = new TreeModelMaterial({ map, treeHeight: targetH })
+        const material = new TreeModelMaterial({ map, treeHeight: height, materialCfg })
 
-        resolve({ geometry, material, height: targetH, radius })
+        resolve({ geometry, material, height, radius, id: options.id ?? url })
       },
       (ev) => {
         if (onProgress && ev.total) onProgress(ev.loaded / ev.total)
@@ -72,6 +76,20 @@ export function loadTreeTemplate(url, onProgress) {
       reject,
     )
   })
+}
+
+/** 여러 GLB 나무 템플릿 순차 로드 */
+export async function loadAllTreeTemplates(models, onProgress) {
+  const templates = []
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i]
+    const t = await loadTreeTemplate(m.url, m, (p) => {
+      if (onProgress) onProgress((i + p) / models.length)
+    })
+    templates.push(t)
+    if (onProgress) onProgress((i + 1) / models.length)
+  }
+  return templates
 }
 
 /** InstancedMesh — draw call 1회, 셰이더에서 instanceMatrix 적용 */

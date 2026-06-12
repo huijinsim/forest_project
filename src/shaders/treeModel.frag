@@ -1,12 +1,17 @@
 // ─────────────────────────────────────────────────────────────
-// treeModel.frag — GLB 텍스처 + 숲 톤 툰 셰이딩
+// treeModel.frag — 바닥 톤에 맞춘 나무 + 종류·위치별 색 변화
 // ─────────────────────────────────────────────────────────────
+
+#include ./lib/noise.glsl
 
 uniform sampler2D uMap;
 uniform float uHasMap;
 uniform vec3 uTint;
 uniform vec3 uColorTop;
 uniform vec3 uColorBottom;
+uniform vec3 uGroundTone;
+uniform float uGroundMix;
+uniform float uVariation;
 uniform float uBrightness;
 uniform float uSaturation;
 uniform vec3 uLightDir;
@@ -21,6 +26,7 @@ varying vec3 vNormalW;
 varying float vFogDepth;
 varying float vHeight;
 varying vec2 vUv;
+varying vec2 vWorldXZ;
 
 void main() {
   vec3 N = normalize(vNormalW);
@@ -28,23 +34,32 @@ void main() {
   float ndl = dot(N, L) * 0.5 + 0.5;
 
   vec3 tex = uHasMap > 0.5 ? texture2D(uMap, vUv).rgb : uColorBottom;
-  tex = max(tex, vec3(0.06));
+  tex = max(tex, vec3(0.08));
   tex *= uBrightness;
 
-  // Meshy 원본을 숲 팔레트에 맞게 틴트
-  vec3 base = mix(tex, tex * uTint, 0.42);
-  float vert = pow(vHeight, 0.68);
+  // 위치별 얼룩 — 같은 종류도 명도·채도가 조금씩 다르게
+  float nPatch = valueNoise(vWorldXZ * 0.085 + vec2(2.4, 5.1));
+  float nFine = valueNoise(vWorldXZ * 0.21 + vec2(9.2, 1.8));
+  float var = (nPatch - 0.5) * uVariation + (nFine - 0.5) * uVariation * 0.4;
+
+  vec3 base = mix(tex, tex * uTint, 0.48);
+  float vert = pow(vHeight, 0.78);
   base = mix(base * uColorBottom, base * uColorTop, vert);
+  base += vec3(var);
 
-  float shade = smoothstep(0.26, 0.5, ndl) * 0.18 + smoothstep(0.48, 0.84, ndl) * 0.24 + 0.56;
+  // 바닥(ground.frag)과 같은 음영·채도 밴드
+  float shade = smoothstep(0.28, 0.52, ndl) * 0.22 + smoothstep(0.5, 0.82, ndl) * 0.28 + 0.5;
   vec3 col = base * (uAmbient + (1.0 - uAmbient) * shade);
-  col = mix(col, col * uLightColor, 0.12 * shade);
+  col = mix(col, col * uLightColor, 0.1 * shade);
 
-  float rim = smoothstep(0.58, 0.94, ndl) * smoothstep(0.32, 0.92, vHeight);
-  col += uColorTop * rim * uHighlight * 1.25;
+  float rim = smoothstep(0.62, 0.92, ndl) * smoothstep(0.38, 0.9, vHeight);
+  col += uColorTop * rim * uHighlight * 0.45;
 
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(lum), col, uSaturation);
+
+  // 잔디 바닥 톤으로 살짝 녹여 자연스럽게
+  col = mix(col, uGroundTone, uGroundMix * (0.5 + nPatch * 0.38));
 
   float fog = smoothstep(uFogNear * 0.85, uFogFar, vFogDepth);
   fog = pow(fog, 0.9);
