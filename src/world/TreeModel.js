@@ -4,8 +4,25 @@ import { CONFIG } from '../config.js'
 import { TreeModelMaterial } from '../materials/TreeModelMaterial.js'
 
 // ─────────────────────────────────────────────────────────────
-// TreeModel — Meshy GLB 로드 + 인스턴싱용 정규화
+// TreeModel — Meshy GLB 로드 + InstancedMesh 100그루
 // ─────────────────────────────────────────────────────────────
+
+function normalizeTreeGeometry(geometry, targetH) {
+  geometry.computeBoundingBox()
+  const box = geometry.boundingBox
+  const cx = (box.min.x + box.max.x) * 0.5
+  const cz = (box.min.z + box.max.z) * 0.5
+  geometry.translate(-cx, -box.min.y, -cz)
+
+  const size = new THREE.Vector3()
+  box.getSize(size)
+  const norm = targetH / Math.max(size.y, 0.001)
+  geometry.scale(norm, norm, norm)
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
+  if (!geometry.attributes.normal) geometry.computeVertexNormals()
+  return geometry
+}
 
 /**
  * @param {string} url
@@ -27,7 +44,9 @@ export function loadTreeTemplate(url, onProgress) {
           return
         }
 
-        const geometry = src.geometry.clone()
+        const targetH = CONFIG.forest.treeModelHeight
+        const geometry = normalizeTreeGeometry(src.geometry.clone(), targetH)
+
         let srcMat = src.material
         if (Array.isArray(srcMat)) srcMat = srcMat[0]
 
@@ -37,19 +56,6 @@ export function loadTreeTemplate(url, onProgress) {
           map.colorSpace = THREE.SRGBColorSpace
         }
 
-        geometry.computeBoundingBox()
-        const box = geometry.boundingBox
-        const cx = (box.min.x + box.max.x) * 0.5
-        const cz = (box.min.z + box.max.z) * 0.5
-        geometry.translate(-cx, -box.min.y, -cz)
-
-        const size = new THREE.Vector3()
-        box.getSize(size)
-        const targetH = CONFIG.forest.treeModelHeight
-        const norm = targetH / Math.max(size.y, 0.001)
-        geometry.scale(norm, norm, norm)
-        geometry.computeBoundingBox()
-
         const radius =
           Math.max(
             geometry.boundingBox.max.x - geometry.boundingBox.min.x,
@@ -58,14 +64,7 @@ export function loadTreeTemplate(url, onProgress) {
 
         const material = new TreeModelMaterial({ map, treeHeight: targetH })
 
-        resolve({
-          geometry,
-          material,
-          height: targetH,
-          radius,
-          kind: 'conifer',
-          foliageOutline: false,
-        })
+        resolve({ geometry, material, height: targetH, radius })
       },
       (ev) => {
         if (onProgress && ev.total) onProgress(ev.loaded / ev.total)
@@ -75,10 +74,9 @@ export function loadTreeTemplate(url, onProgress) {
   })
 }
 
-/** 배치 데이터 → InstancedMesh */
+/** InstancedMesh — draw call 1회, 셰이더에서 instanceMatrix 적용 */
 export function createTreeInstances(template, placements) {
   const mesh = new THREE.InstancedMesh(template.geometry, template.material, placements.length)
-  mesh.frustumCulled = true
 
   const m = new THREE.Matrix4()
   const q = new THREE.Quaternion()
@@ -95,12 +93,13 @@ export function createTreeInstances(template, placements) {
   }
 
   mesh.instanceMatrix.needsUpdate = true
+  mesh.computeBoundingSphere()
+  mesh.frustumCulled = true
   mesh.userData.interactive = 'tree'
   mesh.userData.isInstancedTrees = true
   return mesh
 }
 
-/** 클릭 포커스용 가짜 root */
 export function treeFocusRoot(placement) {
   return {
     userData: { focusY: placement.focusY },

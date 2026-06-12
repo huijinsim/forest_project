@@ -37,6 +37,7 @@ export class App {
     this._focusTarget = new THREE.Vector3()
 
     this.mainActive = false
+    this._forestLoading = null
     this.focusBlend = 0
     this.focusState = 'idle' // idle | focused | popup
     this._focusVariant = null
@@ -54,16 +55,10 @@ export class App {
     this._bindEvents()
   }
 
-  async init() {
+  /** 렌더러·포스트만 준비 — 무거운 GLB는 Enter 이후 */
+  bootstrap() {
     CONFIG.camera.zoom.value = CONFIG.camera.zoom.default
     CONFIG.camera.pan.value = CONFIG.camera.pan.default
-
-    const pctEl = this.loaderEl.querySelector('.pct')
-    const treeTemplate = await loadTreeTemplate(CONFIG.forest.treeModel, (p) => {
-      if (pctEl) pctEl.textContent = `${Math.round(p * 100)}%`
-    })
-
-    this.forest = new Forest(treeTemplate)
     this.postfx = new PostFX(this.renderer.instance)
     this.resize()
     this.loaderEl.classList.add('is-hidden')
@@ -71,9 +66,39 @@ export class App {
     this._loop()
   }
 
-  enterMain() {
-    this.mainActive = true
-    this.container.style.cursor = 'pointer'
+  async _loadForest() {
+    if (this.forest) return
+    if (this._forestLoading) return this._forestLoading
+
+    const pctEl = this.loaderEl.querySelector('.pct')
+    this._forestLoading = loadTreeTemplate(CONFIG.forest.treeModel, (p) => {
+      if (pctEl) pctEl.textContent = `${Math.round(p * 100)}%`
+    }).then((treeTemplate) => {
+      this.forest = new Forest(treeTemplate)
+      this._forestLoading = null
+    })
+
+    return this._forestLoading
+  }
+
+  async enterMain() {
+    if (this.mainActive) return
+
+    const pctEl = this.loaderEl.querySelector('.pct')
+    this.loaderEl.classList.remove('is-hidden')
+    if (pctEl) pctEl.textContent = '0%'
+
+    try {
+      await this._loadForest()
+      this.mainActive = true
+      this.container.style.cursor = 'pointer'
+    } catch (err) {
+      console.error('[forest] 숲 로드 실패:', err)
+      if (pctEl) pctEl.textContent = '로드 실패'
+      throw err
+    } finally {
+      this.loaderEl.classList.add('is-hidden')
+    }
   }
 
   _bindEvents() {
@@ -286,8 +311,12 @@ export class App {
       cam.lookAt(this._lookAt)
     }
 
-    if (this.forest) this.forest.update(elapsed)
-    this.postfx.render(this.forest.scene, cam, elapsed)
+    if (this.forest) {
+      this.forest.update(elapsed)
+      this.postfx.render(this.forest.scene, cam, elapsed)
+    } else {
+      this.renderer.render(new THREE.Scene(), cam)
+    }
   }
 
   dispose() {

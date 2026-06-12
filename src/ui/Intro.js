@@ -17,7 +17,7 @@ export class Intro {
     this.root.innerHTML = /* html */ `
       <style>
         #intro {
-          position: fixed; inset: 0; z-index: 40;
+          position: fixed; inset: 0; z-index: 50;
           display: flex; flex-direction: column;
           align-items: center; justify-content: center;
           background: radial-gradient(ellipse at 50% 40%, #f3e5ab 0%, #e5c582 55%, #d4b870 100%);
@@ -67,7 +67,9 @@ export class Intro {
     if (this._done) return
     this._done = true
     this.root.classList.add('is-hidden')
-    window.setTimeout(() => this.onEnter(), 900)
+    Promise.resolve(this.onEnter?.()).catch((err) => {
+      console.error('[intro] enter 실패:', err)
+    })
   }
 
   dispose() {

@@ -3,8 +3,7 @@ import { Debug } from './ui/Debug.js'
 import { Intro } from './ui/Intro.js'
 
 // ─────────────────────────────────────────────────────────────
-// main.js — 진입점
-// 로드 → 인트로 → 메인(고정 시점 + 인터랙션)
+// main.js — 인트로 즉시 표시 → Enter 클릭 시 숲 로드
 // ─────────────────────────────────────────────────────────────
 const app = new App({
   container: document.getElementById('app'),
@@ -15,13 +14,12 @@ const debug = new Debug()
 
 const intro = new Intro(() => app.enterMain())
 
+intro.show()
+
 app
-  .init()
-  .then(() => intro.show())
+  .bootstrap()
   .catch((err) => {
-    console.error('[forest] 초기화 실패:', err)
-    const loader = document.getElementById('loader')
-    if (loader) loader.querySelector('.pct').textContent = '로드 실패 😢'
+    console.error('[forest] bootstrap 실패:', err)
   })
 
 if (import.meta.hot) {

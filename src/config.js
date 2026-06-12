@@ -4,7 +4,7 @@
 
 export const CONFIG = {
   renderer: {
-    maxPixelRatio: 2,
+    maxPixelRatio: 1.5,
     clearColor: '#f0dcc8',
   },
 
@@ -160,12 +160,11 @@ export const CONFIG = {
     treeModelHeight: 5.8,
     treeModelMaterial: {
       tint: '#7a9858',
-      brightness: 1.22,
-      saturation: 1.08,
+      brightness: 1.28,
+      saturation: 1.12,
     },
-    treeCount: 980,
-    fillGrid: 480,
-    areaX: 96,
+    treeCount: 100,
+    areaX: 88,
     zNear: 14,
     zFar: -175,
     clearingCenter: [0, -4],
@@ -174,10 +173,11 @@ export const CONFIG = {
     grassClumps: 95,
     cattails: 52,
     ferns: 68,
-    rows: 11,
-    minTreeScale: 0.58,
-    maxTreeScale: 1.42,
-    canopyPadding: 1.06, // 캐노피 반경 합 × 여유 — 겹침 방지
+    rows: 10,
+    minTreeScale: 0.72,
+    maxTreeScale: 1.28,
+    canopyPadding: 0.92,
+    canopyRadiusScale: 0.82,
   },
 
   mountains: [
