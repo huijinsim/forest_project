@@ -132,13 +132,13 @@ export class SkyBackground {
     const dayT = 1 - nightT
 
     if (dayT > 0.02) {
-      const cx = w * 0.55
-      const cy = h * 0.28
-      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.62)
-      glow.addColorStop(0, mixHex(sky.top, '#fff0c8', 0.55 * dayT))
-      glow.addColorStop(0.45, mixHex(sky.horizon, '#f8e0b0', 0.35 * dayT))
+      const cx = w * 0.5
+      const cy = h * 0.22
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.55)
+      glow.addColorStop(0, mixHex(sky.top, '#ffffff', 0.35 * dayT))
+      glow.addColorStop(0.5, mixHex(sky.horizon, '#d8f4ff', 0.2 * dayT))
       glow.addColorStop(1, 'rgba(255,255,255,0)')
-      ctx.globalAlpha = 0.55 * dayT
+      ctx.globalAlpha = 0.28 * dayT
       ctx.fillStyle = glow
       ctx.fillRect(0, 0, w, h)
       ctx.globalAlpha = 1

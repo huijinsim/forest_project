@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { CONFIG } from '../config.js'
 
 // ─────────────────────────────────────────────────────────────
 // CloudModel — GLB 구름 로드 (중심 정렬 + 목표 크기로 정규화)
@@ -29,6 +30,14 @@ export function loadCloudTemplate(url, options = {}, onProgress) {
 
         root.traverse((o) => {
           if (o.isMesh) {
+            o.material = new THREE.MeshStandardMaterial({
+              color: 0xffffff,
+              roughness: 0.92,
+              metalness: 0,
+              transparent: true,
+              opacity: CONFIG.clouds.opacity ?? 0.9,
+              depthWrite: false,
+            })
             o.castShadow = false
             o.receiveShadow = false
             o.frustumCulled = false

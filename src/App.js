@@ -4,7 +4,7 @@ import { CONFIG } from './config.js'
 import { Renderer } from './core/Renderer.js'
 import { PostFX } from './post/PostFX.js'
 import { Forest } from './world/Forest.js'
-import { loadAllTreeTemplates } from './world/TreeModel.js'
+import { loadAllTreeTemplates, loadTreeTemplate } from './world/TreeModel.js'
 import { loadCloudTemplates } from './world/CloudModel.js'
 import { buildHillDiorama } from './world/Diorama.js'
 import { PageOverlay } from './ui/PageOverlay.js'
@@ -84,10 +84,20 @@ export class App {
     this._forestLoading = (async () => {
       try {
         const templates = await loadAllTreeTemplates(CONFIG.forest.treeModels, (p) => {
-          if (pctEl) pctEl.textContent = `${Math.round(p * 65)}%`
+          if (pctEl) pctEl.textContent = `${Math.round(p * 48)}%`
         })
+        const bushTemplate = CONFIG.forest.bushModel
+          ? await loadTreeTemplate(CONFIG.forest.bushModel.url, CONFIG.forest.bushModel, (p) => {
+              if (pctEl) pctEl.textContent = `${Math.round(48 + p * 8)}%`
+            })
+          : null
+        const flowerTemplates = CONFIG.forest.flowerModels?.length
+          ? await loadAllTreeTemplates(CONFIG.forest.flowerModels, (p) => {
+              if (pctEl) pctEl.textContent = `${Math.round(56 + p * 8)}%`
+            })
+          : []
         const cloudTemplates = await loadCloudTemplates(CONFIG.clouds.models, (p) => {
-          if (pctEl) pctEl.textContent = `${Math.round(65 + p * 15)}%`
+          if (pctEl) pctEl.textContent = `${Math.round(64 + p * 14)}%`
         })
 
         let diorama = null
@@ -101,7 +111,7 @@ export class App {
           }
         }
 
-        this.forest = new Forest(templates, cloudTemplates, diorama)
+        this.forest = new Forest(templates, cloudTemplates, diorama, bushTemplate, flowerTemplates)
       } finally {
         this._forestLoading = null
       }

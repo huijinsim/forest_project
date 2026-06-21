@@ -36,31 +36,35 @@ function sampleNumberTrack(keyframes, t, field) {
   return THREE.MathUtils.lerp(left[field], right[field], local)
 }
 
-/** 배경 하늘 — Summer Afternoon 따뜻한 오후 톤 */
+/** 배경 하늘 — 미피 스타일 선명한 블루 */
 function pastelizeSkyHex(hex) {
   _a.set(hex.startsWith('#') ? hex : `#${hex}`)
-  _b.set('#f5e8cc')
-  _a.lerp(_b, 0.12)
   const hsl = { h: 0, s: 0, l: 0 }
   _a.getHSL(hsl)
-  hsl.s = Math.min(hsl.s * 0.65, 0.28)
-  hsl.l = THREE.MathUtils.clamp(hsl.l * 0.97 + 0.04, 0.62, 0.94)
+  // 하늘 블루는 채도 유지
+  if (hsl.h > 0.48 && hsl.h < 0.68) {
+    hsl.s = Math.min(hsl.s * 1.08, 0.78)
+    hsl.l = THREE.MathUtils.clamp(hsl.l, 0.58, 0.84)
+    return _a.setHSL(hsl.h, hsl.s, hsl.l).getHexString()
+  }
+  hsl.s = Math.min(hsl.s * 0.88, 0.55)
+  hsl.l = THREE.MathUtils.clamp(hsl.l * 0.98 + 0.02, 0.5, 0.9)
   return _a.setHSL(hsl.h, hsl.s, hsl.l).getHexString()
 }
 
 const SKY_TRACK = [
-  { t: 0.0, top: '#f8ecd8', bottom: '#f0e0c0', horizon: '#edd8b0', sunset: '#f5e0b8' },
-  { t: 0.25, top: '#f8e8d0', bottom: '#eed8b8', horizon: '#e8d0a8', sunset: '#f2dcb0' },
-  { t: 0.5, top: '#f5e0c0', bottom: '#e8d0a8', horizon: '#e0c898', sunset: '#ecd0a0' },
-  { t: 0.75, top: '#d8c8b0', bottom: '#b8b8a8', horizon: '#a0b0a0', sunset: '#c0b8a8' },
+  { t: 0.0, top: '#72c8f4', bottom: '#89d8fa', horizon: '#a0e4fc', sunset: '#68c0ec' },
+  { t: 0.25, top: '#68c4f2', bottom: '#84d4f8', horizon: '#9ce0fc', sunset: '#60b8e8' },
+  { t: 0.5, top: '#5eb8ec', bottom: '#78ccf4', horizon: '#90daf8', sunset: '#58b0e4' },
+  { t: 0.75, top: '#88b8d8', bottom: '#a0c8e0', horizon: '#b0d0e8', sunset: '#98b8d0' },
   { t: 1.0, top: '#3d4540', bottom: '#4a5048', horizon: '#5a6058', sunset: '#484e48' },
 ]
 
 const LIGHT_TRACK = [
-  { t: 0.0, color: '#fff0d8', ambient: 0.98 },
-  { t: 0.25, color: '#ffecc8', ambient: 1.0 },
-  { t: 0.5, color: '#ffe8c0', ambient: 0.96 },
-  { t: 0.75, color: '#f0e0c0', ambient: 0.9 },
+  { t: 0.0, color: '#fffef8', ambient: 0.92 },
+  { t: 0.25, color: '#ffffff', ambient: 0.96 },
+  { t: 0.5, color: '#fffef8', ambient: 0.94 },
+  { t: 0.75, color: '#f0f0e8', ambient: 0.88 },
   { t: 1.0, color: '#7888a0', ambient: 0.56 },
 ]
 
@@ -75,7 +79,7 @@ function computeForestMood(sky, celestial, t) {
     : THREE.MathUtils.clamp(0.3 + sunArc * 0.5, 0.22, 0.82)
   const lightColor = `#${lerpHex(sky.horizon, sky.sunset, sunMix)}`
   const ambientColor = `#${lerpHex(sky.horizon, sky.bottom, 0.52)}`
-  const bounceColor = `#${lerpHex(sky.bottom, '#a8c878', 0.32)}`
+  const bounceColor = `#${lerpHex(sky.bottom, '#6ea14a', 0.28)}`
 
   const ambient = sampleNumberTrack(LIGHT_TRACK, t, 'ambient')
   const bounceStrength = THREE.MathUtils.lerp(0.14, 0.05, nightT)
@@ -175,15 +179,15 @@ export class DayCycle {
 
     if (forest?.scene) {
       forest.scene.background = this.skyBackground.texture
-      if (!forest.scene.fog) forest.scene.fog = new THREE.Fog('#f0dcc0', 320, 1200)
+      if (!forest.scene.fog) forest.scene.fog = new THREE.Fog('#a0e4fc', 320, 1200)
       forest.scene.fog.color.set(`#${a.sky.horizon}`)
       forest.scene.fog.near = THREE.MathUtils.lerp(300, 100, nightT)
       forest.scene.fog.far = THREE.MathUtils.lerp(1300, 480, nightT)
     }
 
     if (forest?.sun) {
-      forest.sun.color.set('#ffe8b8')
-      forest.sun.intensity = THREE.MathUtils.lerp(0.25, 1.25, dayT)
+      forest.sun.color.set('#ffffff')
+      forest.sun.intensity = THREE.MathUtils.lerp(0.3, 1.05, dayT)
       const dist = 170
       forest.sun.position.set(
         a.celestial.x * dist,
@@ -196,13 +200,13 @@ export class DayCycle {
 
     if (forest?.hemi) {
       forest.hemi.color.set(`#${a.sky.top}`)
-      forest.hemi.groundColor.set('#8cb868')
-      forest.hemi.intensity = THREE.MathUtils.lerp(0.6, 1.05, dayT)
+      forest.hemi.groundColor.set('#6ea14a')
+      forest.hemi.intensity = THREE.MathUtils.lerp(0.65, 1.0, dayT)
     }
 
     if (forest?.ambient) {
-      forest.ambient.color.set('#fff0d8')
-      forest.ambient.intensity = THREE.MathUtils.lerp(0.52, 0.72, dayT)
+      forest.ambient.color.set('#f0f8ff')
+      forest.ambient.intensity = THREE.MathUtils.lerp(0.55, 0.78, dayT)
     }
   }
 

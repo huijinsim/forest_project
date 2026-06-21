@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { CONFIG, PALETTE } from '../config.js'
-import { buildBush, buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
+import { buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
 import { createTreeInstances, treeFocusRoot } from './TreeModel.js'
 import { buildDiorama } from './Diorama.js'
 import { createMeshHeightSampler } from './Terrain.js'
@@ -8,7 +8,7 @@ import { createMeshHeightSampler } from './Terrain.js'
 function standardMat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({
     color: new THREE.Color(color),
-    roughness: opts.roughness ?? 0.95,
+    roughness: opts.roughness ?? 0.88,
     metalness: 0.0,
     side: opts.side ?? THREE.FrontSide,
     transparent: opts.transparent ?? false,
@@ -32,11 +32,24 @@ function mulberry32(seed) {
 export class Forest {
   /** @param {Awaited<ReturnType<import('./TreeModel.js').loadAllTreeTemplates>>} treeTemplates */
   /** @param {Awaited<ReturnType<import('./Terrain.js').loadTerrain>>} [terrain] */
-  constructor(treeTemplates, cloudTemplates = [], prebuiltDiorama = null) {
+  /** @param {Awaited<ReturnType<import('./TreeModel.js').loadTreeTemplate>>} [bushTemplate] */
+  /** @param {Awaited<ReturnType<import('./TreeModel.js').loadAllTreeTemplates>>} [flowerTemplates] */
+  constructor(
+    treeTemplates,
+    cloudTemplates = [],
+    prebuiltDiorama = null,
+    bushTemplate = null,
+    flowerTemplates = [],
+  ) {
     this.scene = new THREE.Scene()
     this.rng = mulberry32(CONFIG.forest.seed)
     this.cloudTemplates = cloudTemplates
     this._prebuiltDiorama = prebuiltDiorama
+    this.bushTemplate = bushTemplate
+    this.flowerLayers = (CONFIG.forest.flowerModels ?? []).map((cfg, i) => ({
+      config: cfg,
+      template: flowerTemplates[i] ?? null,
+    }))
     this.materials = []
     this.pickables = []
     this.treeLayers = CONFIG.forest.treeModels.map((cfg, i) => ({
@@ -56,6 +69,7 @@ export class Forest {
     this._buildTrees()
     this._buildTreeInstances()
     this._buildUnderstory()
+    this._buildFlowers()
     this._buildForeground()
     this._buildRocks()
     this.butterflies = null
@@ -70,10 +84,10 @@ export class Forest {
     this.ambient = new THREE.AmbientLight('#ffffff', 0.4)
     this.scene.add(this.ambient)
 
-    this.hemi = new THREE.HemisphereLight('#f8ecd8', '#8cb868', 0.85)
+    this.hemi = new THREE.HemisphereLight('#b8e4fc', '#6ea14a', 0.9)
     this.scene.add(this.hemi)
 
-    this.sun = new THREE.DirectionalLight('#ffe8b8', 1.25)
+    this.sun = new THREE.DirectionalLight('#fffef8', 1.05)
     this.sun.position.set(60, 90, 40)
     this.sun.castShadow = true
     this.sun.shadow.mapSize.set(2048, 2048)
@@ -93,10 +107,9 @@ export class Forest {
   }
 
   _initMaterials() {
-    this.bushMat = standardMat(PALETTE.bush, { roughness: 0.95, side: THREE.DoubleSide })
-    this.fernMat = standardMat(PALETTE.fern, { roughness: 0.95, side: THREE.DoubleSide })
-    this.cattailStalkMat = standardMat(PALETTE.cattailStalk, { roughness: 0.9 })
-    this.cattailTipMat = standardMat(PALETTE.cattailTipBright, { roughness: 0.8 })
+    this.fernMat = standardMat(PALETTE.fern, { roughness: 0.88, side: THREE.DoubleSide })
+    this.cattailStalkMat = standardMat(PALETTE.cattailStalk, { roughness: 0.88 })
+    this.cattailTipMat = standardMat(PALETTE.cattailTipBright, { roughness: 0.82 })
     this.cloudEntries = []
   }
 
@@ -272,7 +285,7 @@ export class Forest {
       const li = queue[qi]
       const cfg = this.treeLayers[li].config
 
-      const spot = this._pickGroundSpot(rng, 2.0)
+      const spot = this._pickGroundSpot(rng, 2.4)
       if (!spot) {
         qi++
         continue
@@ -294,10 +307,10 @@ export class Forest {
 
   /** 저폴리 바위 무리 — 언덕 발치·길가 */
   _buildRocks() {
-    const rng = this.rng
     const count = CONFIG.diorama.rockCount ?? 0
     if (!count) return
 
+    const rng = this.rng
     const rockMat = this._track(standardMat('#c4b5a0', { roughness: 1 }))
     const rockMatDark = this._track(standardMat('#6a5e52', { roughness: 1 }))
 
@@ -329,29 +342,70 @@ export class Forest {
   }
 
   _buildUnderstory() {
-    const f = CONFIG.forest
-    const rng = this.rng
+    const cfg = CONFIG.forest.bushModel
+    if (!this.bushTemplate || !cfg) return
 
-    for (let i = 0; i < f.bushCount; i++) {
-      const spot = this._pickGroundSpot(rng, 1.0)
+    const rng = this.rng
+    const placements = []
+
+    for (let i = 0; i < cfg.count; i++) {
+      const spot = this._pickGroundSpot(rng, 0.9)
       if (!spot) continue
       const [x, z] = spot
-      const { foliage } = buildBush(rng)
-      const g = new THREE.Group()
-      g.position.set(x, this._groundY(x, z, -0.05), z)
-      g.scale.setScalar(0.5 + rng() * 0.95)
-      g.rotation.y = rng() * Math.PI * 2
-      const bush = new THREE.Mesh(foliage, this.bushMat)
-      bush.castShadow = true
-      bush.receiveShadow = true
-      g.add(bush)
-      this.scene.add(g)
+      placements.push({
+        x,
+        z,
+        scale: cfg.minScale + rng() * (cfg.maxScale - cfg.minScale),
+        rotY: rng() * Math.PI * 2,
+        y: this._groundY(x, z, cfg.groundSink ?? -0.04),
+      })
+    }
+
+    if (!placements.length) return
+
+    const mesh = createTreeInstances(this.bushTemplate, placements)
+    this._track(mesh.material)
+    this.scene.add(mesh)
+  }
+
+  _buildFlowers() {
+    if (!this.flowerLayers?.length) return
+
+    const rng = this.rng
+
+    for (const layer of this.flowerLayers) {
+      const cfg = layer.config
+      if (!layer.template || !cfg.count) continue
+
+      const placements = []
+      for (let i = 0; i < cfg.count; i++) {
+        const spot = this._pickGroundSpot(rng, 1.1)
+        if (!spot) continue
+        const [x, z] = spot
+        placements.push({
+          x,
+          z,
+          scale: cfg.minScale + rng() * (cfg.maxScale - cfg.minScale),
+          rotY: rng() * Math.PI * 2,
+          y: this._groundY(x, z, cfg.groundSink ?? -0.02),
+        })
+      }
+
+      if (!placements.length) continue
+
+      const mesh = createTreeInstances(layer.template, placements)
+      mesh.userData.interactive = null
+      mesh.userData.isInstancedTrees = false
+      this._track(mesh.material)
+      this.scene.add(mesh)
     }
   }
 
   _buildForeground() {
-    const rng = this.rng
     const f = CONFIG.forest
+    if (!f.cattails && !f.ferns) return
+
+    const rng = this.rng
 
     const pickSpot = () => this._pickGroundSpot(rng, 0.8)
 
@@ -408,6 +462,14 @@ export class Forest {
   dispose() {
     const shared = new Set()
     for (const layer of this.treeLayers) {
+      layer.template?.geometry?.dispose()
+      layer.template?.material?.dispose()
+      if (layer.template?.geometry) shared.add(layer.template.geometry)
+      if (layer.template?.material) shared.add(layer.template.material)
+    }
+    this.bushTemplate?.geometry?.dispose()
+    this.bushTemplate?.material?.dispose()
+    for (const layer of this.flowerLayers ?? []) {
       layer.template?.geometry?.dispose()
       layer.template?.material?.dispose()
       if (layer.template?.geometry) shared.add(layer.template.geometry)

@@ -26,14 +26,16 @@ function normalizeTreeGeometry(geometry, targetH) {
 /**
  * @param {string} url
  * @param {object} [options]
- * @param {number} [options.height]
- * @param {object} [options.material]
  * @param {(pct:number)=>void} [onProgress]
  */
 export function loadTreeTemplate(url, options = {}, onProgress) {
   const loader = new GLTFLoader()
   const height = options.height ?? CONFIG.forest.treeModelHeight
-  const materialCfg = options.material ?? CONFIG.forest.treeModelMaterial
+  const baseMat = CONFIG.forest.plantMaterial ?? {}
+  const materialCfg = { ...baseMat, ...options.material }
+
+  const foliageColor = new THREE.Color(materialCfg.foliage ?? '#a1b15f')
+  const trunkColor = new THREE.Color(materialCfg.trunk ?? '#88826d')
 
   return new Promise((resolve, reject) => {
     loader.load(
@@ -50,53 +52,73 @@ export function loadTreeTemplate(url, options = {}, onProgress) {
 
         const geometry = normalizeTreeGeometry(src.geometry.clone(), height)
 
-        let srcMat = src.material
-        if (Array.isArray(srcMat)) srcMat = srcMat[0]
-
-        // 일러스트 톤을 정확히 맞추기 위해 GLB 텍스처 색은 사용하지 않고
-        // 줄기(아래)와 잎(위) 색을 정점 높이로 분리해 칠한다
         const radius =
           Math.max(
             geometry.boundingBox.max.x - geometry.boundingBox.min.x,
             geometry.boundingBox.max.z - geometry.boundingBox.min.z,
           ) * 0.5
 
-        const foliageColor = new THREE.Color(materialCfg.tint ?? '#8aa06a')
-        const trunkColor = new THREE.Color(materialCfg.trunk ?? '#8c7a6b')
-        const trunkTop = height * (materialCfg.trunkRatio ?? 0.16)
-        const trunkBlend = height * 0.04
+        const trunkTop = height * (materialCfg.trunkRatio ?? 0.14)
+        const trunkBlend = height * (materialCfg.trunkBlend ?? 0.04)
+        const trunkRadius = Math.max(
+          radius * (materialCfg.trunkRadiusRatio ?? 0.16),
+          height * 0.045,
+        )
+        const splitMode = materialCfg.splitMode ?? 'tree'
+        const useRadial = splitMode === 'tree' ? 1.0 : 0.0
 
         const material = new THREE.MeshStandardMaterial({
           color: 0xffffff,
-          roughness: 0.92,
+          roughness: materialCfg.roughness ?? 0.9,
           metalness: 0.0,
           flatShading: false,
         })
+
         material.onBeforeCompile = (shader) => {
-          shader.uniforms.uTrunkColor = { value: trunkColor }
           shader.uniforms.uFoliageColor = { value: foliageColor }
+          shader.uniforms.uTrunkColor = { value: trunkColor }
           shader.uniforms.uTrunkTop = { value: trunkTop }
           shader.uniforms.uTrunkBlend = { value: trunkBlend }
+          shader.uniforms.uTrunkRadius = { value: trunkRadius }
+          shader.uniforms.uUseRadial = { value: useRadial }
+
           shader.vertexShader = shader.vertexShader
             .replace(
               '#include <common>',
-              '#include <common>\nvarying float vLocalY;\nvarying vec3 vTint;\nattribute vec3 aTint;',
+              '#include <common>\nvarying float vLocalY;\nvarying float vRadial;',
             )
             .replace(
               '#include <begin_vertex>',
-              '#include <begin_vertex>\n  vLocalY = position.y;\n  vTint = aTint;',
+              '#include <begin_vertex>\n  vLocalY = position.y;\n  vRadial = length(position.xz);',
             )
+
           shader.fragmentShader = shader.fragmentShader
             .replace(
               '#include <common>',
-              '#include <common>\nvarying float vLocalY;\nvarying vec3 vTint;\nuniform vec3 uTrunkColor;\nuniform vec3 uFoliageColor;\nuniform float uTrunkTop;\nuniform float uTrunkBlend;',
+              `#include <common>
+varying float vLocalY;
+varying float vRadial;
+uniform vec3 uFoliageColor;
+uniform vec3 uTrunkColor;
+uniform float uTrunkTop;
+uniform float uTrunkBlend;
+uniform float uTrunkRadius;
+uniform float uUseRadial;`,
             )
             .replace(
               'vec4 diffuseColor = vec4( diffuse, opacity );',
-              'float folMix = smoothstep(uTrunkTop, uTrunkTop + uTrunkBlend, vLocalY);\n  vec3 foliage = uFoliageColor * vTint;\n  vec3 baseCol = mix(uTrunkColor, foliage, folMix);\n  vec4 diffuseColor = vec4( baseCol, opacity );',
+              `float isHigh = smoothstep(uTrunkTop, uTrunkTop + uTrunkBlend, vLocalY);
+  float folMix = isHigh;
+  if (uUseRadial > 0.5) {
+    float isWide = smoothstep(uTrunkRadius * 0.18, uTrunkRadius * 0.72, vRadial);
+    folMix = max(isHigh, isWide);
+  }
+  vec3 baseCol = mix(uTrunkColor, uFoliageColor, folMix);
+  vec4 diffuseColor = vec4(baseCol, opacity);`,
             )
         }
-        material.customProgramCacheKey = () => 'tree-twotone'
+        material.customProgramCacheKey = () =>
+          `plant-${splitMode}-${materialCfg.foliage}-${materialCfg.trunk}`
 
         resolve({ geometry, material, height, radius, id: options.id ?? url })
       },
@@ -108,7 +130,6 @@ export function loadTreeTemplate(url, options = {}, onProgress) {
   })
 }
 
-/** 여러 GLB 나무 템플릿 순차 로드 */
 export async function loadAllTreeTemplates(models, onProgress) {
   const templates = []
   for (let i = 0; i < models.length; i++) {
@@ -122,7 +143,7 @@ export async function loadAllTreeTemplates(models, onProgress) {
   return templates
 }
 
-/** InstancedMesh — draw call 1회, 셰이더에서 instanceMatrix 적용 */
+/** InstancedMesh — 종류별 단색 (그라데이션 없음) */
 export function createTreeInstances(template, placements) {
   const mesh = new THREE.InstancedMesh(template.geometry, template.material, placements.length)
   mesh.castShadow = true
@@ -133,13 +154,6 @@ export function createTreeInstances(template, placements) {
   const p = new THREE.Vector3()
   const s = new THREE.Vector3()
 
-  // 인스턴스별 잎 색 변주 (초록 톤 안에서 명도·색조 다양화)
-  const tints = new Float32Array(placements.length * 3)
-  const rand = (seed) => {
-    const x = Math.sin(seed * 12.9898) * 43758.5453
-    return x - Math.floor(x)
-  }
-
   for (let i = 0; i < placements.length; i++) {
     const t = placements[i]
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.rotY)
@@ -147,16 +161,8 @@ export function createTreeInstances(template, placements) {
     p.set(t.x, t.y ?? 0, t.z)
     m.compose(p, q, s)
     mesh.setMatrixAt(i, m)
-
-    // 밝기(0.82~1.16) + 따뜻함/차가움(노랑↔청록) 변주
-    const bright = 0.82 + rand(i + 0.3) * 0.34
-    const warm = (rand(i + 7.1) - 0.5) * 0.18
-    tints[i * 3] = bright * (1 + warm)
-    tints[i * 3 + 1] = bright * (1 + warm * 0.35)
-    tints[i * 3 + 2] = bright * (1 - warm)
   }
 
-  mesh.geometry.setAttribute('aTint', new THREE.InstancedBufferAttribute(tints, 3))
   mesh.instanceMatrix.needsUpdate = true
   mesh.computeBoundingSphere()
   mesh.frustumCulled = false
