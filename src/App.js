@@ -1,16 +1,20 @@
 import * as THREE from 'three'
-import gsap from 'gsap'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { CONFIG } from './config.js'
 import { Renderer } from './core/Renderer.js'
+import { PostFX } from './post/PostFX.js'
 import { Forest } from './world/Forest.js'
 import { loadAllTreeTemplates } from './world/TreeModel.js'
-import { PostFX } from './post/PostFX.js'
-import { Popup } from './ui/Popup.js'
-import { FocusCTA } from './ui/FocusCTA.js'
+import { loadCloudTemplates } from './world/CloudModel.js'
+import { buildHillDiorama } from './world/Diorama.js'
+import { PageOverlay } from './ui/PageOverlay.js'
+import { loadFonts } from './ui/loadFonts.js'
+import { TimeSlider } from './ui/TimeSlider.js'
+import { DayCycle } from './systems/DayCycle.js'
 
 // ─────────────────────────────────────────────────────────────
-// App — Forest → PostFX → RAF
-// 자유 시점 + 클릭 확대 → CTA → 상세 팝업
+// App — 풀스크린 3D 숲 장소 (OrbitControls 자유 탐색)
+// 클릭 → 나무: About / 나비: Works
 // ─────────────────────────────────────────────────────────────
 export class App {
   constructor({ container, loaderEl }) {
@@ -18,52 +22,58 @@ export class App {
     this.loaderEl = loaderEl
     this.clock = new THREE.Clock()
 
-    this.pointerTarget = new THREE.Vector2(0, 0)
-    this.pointer = new THREE.Vector2(0, 0)
-
-    this.zoomSmooth = CONFIG.camera.zoom.default
-    this.panSmooth = CONFIG.camera.pan.default
-
-    this._keys = { left: false, right: false }
-
-    this._posOv = new THREE.Vector3(...CONFIG.camera.overview.position)
-    this._posCl = new THREE.Vector3(...CONFIG.camera.close.position)
-    this._tgtOv = new THREE.Vector3(...CONFIG.camera.overview.target)
-    this._tgtCl = new THREE.Vector3(...CONFIG.camera.close.target)
-    this._lookAt = new THREE.Vector3()
-    this._baseCamPos = new THREE.Vector3()
-    this._baseLookAt = new THREE.Vector3()
-    this._focusCamPos = new THREE.Vector3()
-    this._focusTarget = new THREE.Vector3()
-
     this.mainActive = false
     this._forestLoading = null
-    this.focusBlend = 0
-    this.focusState = 'idle' // idle | focused | popup
-    this._focusVariant = null
-    this._focusTween = null
 
     this._raycaster = new THREE.Raycaster()
     this._ndc = new THREE.Vector2()
-    this.popup = new Popup()
-    this.focusCTA = new FocusCTA({
-      onEnter: () => this._openDetailPopup(),
-      onBack: () => this._returnFromFocus(),
-    })
+    this._down = { x: 0, y: 0, t: 0 }
+
+    this.pageOverlay = new PageOverlay()
 
     this.renderer = new Renderer(container)
+    this.postfx = new PostFX(this.renderer.instance, this.renderer.camera)
+    this.dayCycle = new DayCycle()
+    this.timeSlider = new TimeSlider((t) => {
+      this.dayCycle.setTime(t)
+      this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
+      this.dayCycle.apply(this.forest, this.renderer.camera)
+    })
+
+    this._initControls()
     this._bindEvents()
+    this._resizeObserver = new ResizeObserver(() => this.resize())
+    this._resizeObserver.observe(this.container)
   }
 
-  /** 렌더러·포스트만 준비 — 무거운 GLB는 Enter 이후 */
+  _initControls() {
+    const cam = this.renderer.camera
+    const ov = CONFIG.camera.overview
+    cam.position.set(...ov.position)
+    cam.fov = ov.fov
+    cam.updateProjectionMatrix()
+
+    this.controls = new OrbitControls(cam, this.renderer.instance.domElement)
+    this.controls.target.set(...ov.target)
+    this.controls.enableDamping = true
+    this.controls.dampingFactor = 0.08
+    this.controls.rotateSpeed = 0.6
+    this.controls.zoomSpeed = 0.9
+    this.controls.panSpeed = 0.6
+    this.controls.minDistance = 6
+    this.controls.maxDistance = 160
+    this.controls.maxPolarAngle = Math.PI * 0.46
+    this.controls.enabled = false
+    this.controls.update()
+  }
+
   bootstrap() {
-    CONFIG.camera.zoom.value = CONFIG.camera.zoom.default
-    CONFIG.camera.pan.value = CONFIG.camera.pan.default
-    this.postfx = new PostFX(this.renderer.instance)
+    this.dayCycle.bindRenderer(this.renderer.instance)
+    this.dayCycle.apply(null, this.renderer.camera)
     this.resize()
-    this.loaderEl.classList.add('is-hidden')
     this.clock.start()
     this._loop()
+    return this.enterMain()
   }
 
   async _loadForest() {
@@ -71,12 +81,31 @@ export class App {
     if (this._forestLoading) return this._forestLoading
 
     const pctEl = this.loaderEl.querySelector('.pct')
-    this._forestLoading = loadAllTreeTemplates(CONFIG.forest.treeModels, (p) => {
-      if (pctEl) pctEl.textContent = `${Math.round(p * 100)}%`
-    }).then((templates) => {
-      this.forest = new Forest(templates)
-      this._forestLoading = null
-    })
+    this._forestLoading = (async () => {
+      try {
+        const templates = await loadAllTreeTemplates(CONFIG.forest.treeModels, (p) => {
+          if (pctEl) pctEl.textContent = `${Math.round(p * 65)}%`
+        })
+        const cloudTemplates = await loadCloudTemplates(CONFIG.clouds.models, (p) => {
+          if (pctEl) pctEl.textContent = `${Math.round(65 + p * 15)}%`
+        })
+
+        let diorama = null
+        if (CONFIG.diorama.terrainUrl) {
+          try {
+            diorama = await buildHillDiorama(CONFIG.diorama.terrainUrl, Math.random, (p) => {
+              if (pctEl) pctEl.textContent = `${Math.round(80 + p * 20)}%`
+            })
+          } catch (e) {
+            console.warn('[forest] GLB 지형 로드 실패, 절차적 지형 사용:', e)
+          }
+        }
+
+        this.forest = new Forest(templates, cloudTemplates, diorama)
+      } finally {
+        this._forestLoading = null
+      }
+    })()
 
     return this._forestLoading
   }
@@ -84,14 +113,21 @@ export class App {
   async enterMain() {
     if (this.mainActive) return
 
+    loadFonts()
+
     const pctEl = this.loaderEl.querySelector('.pct')
     this.loaderEl.classList.remove('is-hidden')
     if (pctEl) pctEl.textContent = '0%'
 
     try {
       await this._loadForest()
+      this.dayCycle.apply(this.forest, this.renderer.camera)
+      this.timeSlider.setValue(this.dayCycle.t, false)
+      this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
+      this.timeSlider.show(this.dayCycle.t)
       this.mainActive = true
-      this.container.style.cursor = 'pointer'
+      this.controls.enabled = true
+      this.container.style.cursor = 'grab'
     } catch (err) {
       console.error('[forest] 숲 로드 실패:', err)
       if (pctEl) pctEl.textContent = '로드 실패'
@@ -105,48 +141,24 @@ export class App {
     this._onResize = () => this.resize()
     window.addEventListener('resize', this._onResize)
 
-    this._onPointerMove = (e) => {
-      this.pointerTarget.x = (e.clientX / window.innerWidth) * 2 - 1
-      this.pointerTarget.y = -((e.clientY / window.innerHeight) * 2 - 1)
+    this._onPointerDown = (e) => {
+      this._down.x = e.clientX
+      this._down.y = e.clientY
+      this._down.t = performance.now()
     }
-    window.addEventListener('pointermove', this._onPointerMove)
-
-    this._onWheel = (e) => {
-      if (!this.mainActive || this.focusState !== 'idle') return
-      e.preventDefault()
-
-      const pan = CONFIG.camera.pan
-      const zoom = CONFIG.camera.zoom
-
-      const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0)
-      if (dx !== 0) {
-        pan.value = THREE.MathUtils.clamp(pan.value - dx * pan.wheelSpeed, pan.min, pan.max)
-        return
-      }
-
-      zoom.value = THREE.MathUtils.clamp(zoom.value - e.deltaY * zoom.speed, 0, 1)
-      window.dispatchEvent(new CustomEvent('forest:zoom', { detail: zoom.value }))
-    }
-    this.container.addEventListener('wheel', this._onWheel, { passive: false })
-
-    this._onKeyDown = (e) => {
-      if (this.focusState !== 'idle') return
-      if (e.key === 'ArrowLeft') this._keys.left = true
-      if (e.key === 'ArrowRight') this._keys.right = true
-    }
-    this._onKeyUp = (e) => {
-      if (e.key === 'ArrowLeft') this._keys.left = false
-      if (e.key === 'ArrowRight') this._keys.right = false
-    }
-    window.addEventListener('keydown', this._onKeyDown)
-    window.addEventListener('keyup', this._onKeyUp)
-
-    this._onPointerDown = (e) => this._handlePointerDown(e)
+    this._onPointerUp = (e) => this._handlePointerUp(e)
     this.container.addEventListener('pointerdown', this._onPointerDown)
+    this.container.addEventListener('pointerup', this._onPointerUp)
   }
 
-  _handlePointerDown(e) {
-    if (!this.mainActive || this.focusState !== 'idle' || !this.forest) return
+  _handlePointerUp(e) {
+    if (!this.mainActive || !this.forest) return
+
+    const dx = e.clientX - this._down.x
+    const dy = e.clientY - this._down.y
+    const moved = Math.hypot(dx, dy)
+    const dt = performance.now() - this._down.t
+    if (moved > 6 || dt > 350) return // 드래그(회전)는 무시
 
     const rect = this.container.getBoundingClientRect()
     this._ndc.set(
@@ -157,161 +169,31 @@ export class App {
     const hits = this._raycaster.intersectObjects(this.forest.getPickables(), false)
     if (!hits.length) return
 
-    const hit = hits[0]
-    const obj = hit.object
+    const obj = hits[0].object
     const type = obj.userData.interactive
-
-    if (obj.userData.isInstancedTrees && hit.instanceId !== undefined) {
-      const root = this.forest.getTreeFocusRoot(obj, hit.instanceId)
-      if (root) this._focusInteractive('tree', root)
-      return
+    if (type === 'tree' || obj.userData.isInstancedTrees) {
+      this.pageOverlay.open('/about.html')
+    } else if (type === 'butterfly') {
+      this.pageOverlay.open('/works.html')
     }
-
-    const root = obj.userData.root
-    if (!type || !root) return
-
-    this._focusInteractive(type, root)
-  }
-
-  _focusInteractive(type, root) {
-    this.focusState = 'focusing'
-    this._focusVariant = type === 'tree' ? 'green' : 'pink'
-    this.container.style.cursor = 'default'
-
-    const target = new THREE.Vector3()
-    root.getWorldPosition(target)
-    if (type === 'tree') target.y += root.userData.focusY ?? 2
-
-    const offsetArr =
-      type === 'tree' ? CONFIG.interaction.treeCameraOffset : CONFIG.interaction.butterflyCameraOffset
-    const offset = new THREE.Vector3(...offsetArr)
-
-    const camDir = new THREE.Vector3()
-    this.renderer.camera.getWorldDirection(camDir)
-    camDir.y = 0
-    if (camDir.lengthSq() < 0.001) camDir.set(0, 0, 1)
-    camDir.normalize()
-
-    const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), camDir).normalize()
-    this._focusTarget.copy(target)
-    this._focusCamPos.copy(target)
-    this._focusCamPos.addScaledVector(camDir, -offset.z)
-    this._focusCamPos.y += offset.y
-    this._focusCamPos.addScaledVector(side, offset.x)
-
-    this._focusTween?.kill()
-    this._focusTween = gsap.to(this, {
-      focusBlend: 1,
-      duration: CONFIG.interaction.focusDuration,
-      ease: 'power2.inOut',
-      onComplete: () => {
-        this.focusState = 'focused'
-        this.focusCTA.show(this._focusVariant)
-      },
-    })
-  }
-
-  _openDetailPopup() {
-    if (this.focusState !== 'focused' || !this._focusVariant) return
-    this.focusCTA.hide()
-    this.focusState = 'popup'
-    this.popup.open(this._focusVariant, () => this._returnFromFocus())
-  }
-
-  _returnFromFocus() {
-    this.focusCTA.hide()
-    this.popup.close(true)
-    this._focusTween?.kill()
-    this._focusTween = gsap.to(this, {
-      focusBlend: 0,
-      duration: CONFIG.interaction.returnDuration,
-      ease: 'power2.inOut',
-      onComplete: () => {
-        this.focusState = 'idle'
-        this._focusVariant = null
-        if (this.mainActive) this.container.style.cursor = 'pointer'
-      },
-    })
   }
 
   resize() {
     this.renderer.resize()
-    if (this.postfx) {
-      const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio)
-      this.postfx.resize(this.container.clientWidth, this.container.clientHeight, dpr)
-    }
-  }
-
-  _applyBaseCamera(elapsed, delta) {
-    const p = CONFIG.parallax
-    const a = 1 - Math.pow(1 - p.damping, delta * 60)
-    this.pointer.lerp(this.pointerTarget, a)
-
-    const panCfg = CONFIG.camera.pan
-    const zoomCfg = CONFIG.camera.zoom
-
-    if (this.focusState === 'idle') {
-      if (this._keys.left) {
-        panCfg.value = THREE.MathUtils.clamp(panCfg.value - panCfg.keySpeed * delta, panCfg.min, panCfg.max)
-      }
-      if (this._keys.right) {
-        panCfg.value = THREE.MathUtils.clamp(panCfg.value + panCfg.keySpeed * delta, panCfg.min, panCfg.max)
-      }
-      const za = 1 - Math.pow(1 - zoomCfg.damping, delta * 60)
-      this.zoomSmooth += (zoomCfg.value - this.zoomSmooth) * za
-      const pa = 1 - Math.pow(1 - panCfg.damping, delta * 60)
-      this.panSmooth += (panCfg.value - this.panSmooth) * pa
-    }
-
-    const t = this.zoomSmooth
-    const panX = this.panSmooth
-    const cam = this.renderer.camera
-
-    cam.position.lerpVectors(this._posOv, this._posCl, t)
-    this._lookAt.lerpVectors(this._tgtOv, this._tgtCl, t)
-
-    cam.position.x += panX
-    this._lookAt.x += panX
-
-    const parallaxScale = THREE.MathUtils.lerp(0.35, 0.75, t)
-    cam.position.x += this.pointer.x * p.strength * parallaxScale
-    cam.position.y += this.pointer.y * p.strength * 0.55 * parallaxScale
-
-    const breathe = p.breathe * (1 - t * 0.6)
-    cam.position.x += Math.sin(elapsed * p.breatheSpeed) * breathe
-    cam.position.y += Math.cos(elapsed * p.breatheSpeed * 0.7) * breathe * 0.5
-
-    cam.lookAt(
-      this._lookAt.x - this.pointer.x * p.look * parallaxScale,
-      this._lookAt.y - this.pointer.y * p.look * parallaxScale,
-      this._lookAt.z,
-    )
-
-    cam.fov = THREE.MathUtils.lerp(CONFIG.camera.overview.fov, CONFIG.camera.close.fov, t)
-    if (cam.aspect < 1.05) cam.fov += (1.05 - cam.aspect) * 12
-    if (t > 0.5) cam.fov += (t - 0.5) * 6
-    cam.updateProjectionMatrix()
-
-    this._baseCamPos.copy(cam.position)
-    this._baseLookAt.copy(this._lookAt)
+    const rect = this.container.getBoundingClientRect()
+    const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio)
+    this.postfx?.resize(rect.width, rect.height, dpr)
   }
 
   _loop() {
     this._raf = requestAnimationFrame(() => this._loop())
 
-    const delta = this.clock.getDelta()
     const elapsed = this.clock.getElapsedTime()
-
-    this._applyBaseCamera(elapsed, delta)
+    this.controls?.update()
 
     const cam = this.renderer.camera
-    if (this.focusBlend > 0.001) {
-      cam.position.lerpVectors(this._baseCamPos, this._focusCamPos, this.focusBlend)
-      this._lookAt.lerpVectors(this._baseLookAt, this._focusTarget, this.focusBlend)
-      cam.lookAt(this._lookAt)
-    }
-
     if (this.forest) {
+      this.dayCycle.apply(this.forest, cam)
       this.forest.update(elapsed)
       this.postfx.render(this.forest.scene, cam, elapsed)
     } else {
@@ -321,16 +203,15 @@ export class App {
 
   dispose() {
     cancelAnimationFrame(this._raf)
-    this._focusTween?.kill()
     window.removeEventListener('resize', this._onResize)
-    window.removeEventListener('pointermove', this._onPointerMove)
-    window.removeEventListener('keydown', this._onKeyDown)
-    window.removeEventListener('keyup', this._onKeyUp)
-    this.container.removeEventListener('wheel', this._onWheel)
     this.container.removeEventListener('pointerdown', this._onPointerDown)
-    this.focusCTA?.dispose()
-    this.popup?.dispose()
+    this.container.removeEventListener('pointerup', this._onPointerUp)
+    this._resizeObserver?.disconnect()
+    this.controls?.dispose()
+    this.pageOverlay?.dispose()
+    this.timeSlider?.dispose()
     this.forest?.dispose()
+    this.dayCycle?.dispose()
     this.postfx?.dispose()
     this.renderer.dispose()
   }

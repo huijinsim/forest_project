@@ -1,103 +1,142 @@
 import * as THREE from 'three'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js'
 import { CONFIG } from '../config.js'
 import vertexShader from '../shaders/post.vert'
 import fragmentShader from '../shaders/post.frag'
 
 // ─────────────────────────────────────────────────────────────
-// PostFX
-// 씬을 렌더타깃에 먼저 그린 뒤, 그 결과를 풀스크린 쿼드에 입혀
-// 종이 질감(그레인 + 비네팅)을 덧씌운다. (수동 2-pass 컴포저)
+// PostFX — WebGI 스타일 품질 파이프라인 + 스케치 일러스트 무드
+// RenderPass → GTAO(SSAO 음영) → Bloom → OutputPass(톤매핑)
+//            → 스케치 무드 ShaderPass → SMAA(프로그레시브 AA)
 // ─────────────────────────────────────────────────────────────
 export class PostFX {
-  /** @param {THREE.WebGLRenderer} renderer */
-  constructor(renderer) {
+  constructor(renderer, camera) {
     this.renderer = renderer
-    this.enabled = true
+    this.placeholderScene = new THREE.Scene()
 
-    // 씬을 그릴 오프스크린 렌더타깃
-    this.renderTarget = new THREE.WebGLRenderTarget(1, 1, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      colorSpace: THREE.SRGBColorSpace,
+    this.composer = new EffectComposer(renderer)
+
+    this.renderPass = new RenderPass(this.placeholderScene, camera)
+    this.composer.addPass(this.renderPass)
+
+    // ── GTAO: 틈·접지 부분의 부드러운 음영 ──
+    this.gtao = new GTAOPass(this.placeholderScene, camera, 1, 1)
+    this.gtao.output = GTAOPass.OUTPUT.Default
+    this.gtao.updateGtaoMaterial({
+      radius: CONFIG.quality.aoRadius,
+      distanceExponent: 1.0,
+      thickness: 1.0,
+      scale: CONFIG.quality.aoScale,
+      samples: 16,
+      distanceFallOff: 1.0,
+      screenSpaceRadius: false,
     })
+    this.gtao.updatePdMaterial({
+      lumaPhi: 10,
+      depthPhi: 2,
+      normalPhi: 3,
+      radius: 4,
+      radiusExponent: 1,
+      rings: 2,
+      samples: 16,
+    })
+    this.composer.addPass(this.gtao)
 
-    // 풀스크린 쿼드 전용 씬/카메라
-    this.quadScene = new THREE.Scene()
-    this.quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+    // ── 부드러운 블룸 (밝은 하늘·하이라이트 발광) ──
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(1, 1),
+      CONFIG.quality.bloomStrength,
+      CONFIG.quality.bloomRadius,
+      CONFIG.quality.bloomThreshold,
+    )
+    this.composer.addPass(this.bloom)
 
-    this.material = new THREE.ShaderMaterial({
+    // 톤매핑 + sRGB → 이후 스케치 패스는 디스플레이 색상에서 동작
+    this.output = new OutputPass()
+    this.composer.addPass(this.output)
+
+    // ── 스케치/일러스트 무드 ──
+    const p = CONFIG.painterly
+    this.sketch = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uTime: { value: 0 },
+        uEdgeThreshold: { value: p.edgeThreshold },
+        uEdgeSoftness: { value: p.edgeSoftness },
+        uInkColor: { value: new THREE.Color(p.inkColor) },
+        uInkStrength: { value: p.inkStrength },
+        uHatchScale: { value: p.hatchScale },
+        uHatchStrength: { value: p.hatchStrength },
+        uHatchInk: { value: new THREE.Color(p.hatchInk) },
+        uCelLevels: { value: p.celLevels },
+        uCelMix: { value: p.celMix },
+        uPaper: { value: p.paper },
+        uPaperScale: { value: p.paperScale },
+        uWash: { value: p.wash },
+        uWashColor: { value: new THREE.Color(p.washColor) },
+        uSaturation: { value: p.saturation },
+        uLift: { value: p.lift },
+        uShadowTint: { value: new THREE.Color(p.shadowTint) },
+        uHighlightTint: { value: new THREE.Color(p.highlightTint) },
+        uVignette: { value: p.vignette },
+      },
       vertexShader,
       fragmentShader,
-      uniforms: {
-        uScene: { value: this.renderTarget.texture },
-        uTime: { value: 0 },
-        uResolution: { value: new THREE.Vector2(1, 1) },
-        uGrain: { value: CONFIG.paper.grain },
-        uVignette: { value: CONFIG.paper.vignette },
-        uVignetteSoftness: { value: CONFIG.paper.vignetteSoftness },
-        uBloomThreshold: { value: CONFIG.dream.bloomThreshold },
-        uBloomStrength: { value: CONFIG.dream.bloomStrength },
-        uBloomRadius: { value: CONFIG.dream.bloomRadius },
-        uWarmTint: { value: CONFIG.dream.warmTint },
-        uWarmColor: { value: new THREE.Color(CONFIG.dream.warmColor) },
-        uLift: { value: CONFIG.dream.lift },
-        uHaze: { value: CONFIG.dream.haze },
-        uSaturation: { value: CONFIG.dream.saturation },
-      },
     })
+    this.composer.addPass(this.sketch)
 
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material)
-    this.quadScene.add(quad)
+    // ── 안티앨리어싱 (가장자리 정리) ──
+    this.smaa = new SMAAPass(1, 1)
+    this.composer.addPass(this.smaa)
   }
 
   resize(width, height, pixelRatio) {
-    const w = Math.floor(width * pixelRatio)
-    const h = Math.floor(height * pixelRatio)
-    this.renderTarget.setSize(w, h)
-    this.material.uniforms.uResolution.value.set(w, h)
+    this.composer.setPixelRatio(pixelRatio)
+    this.composer.setSize(width, height)
+    const w = Math.max(1, Math.floor(width * pixelRatio))
+    const h = Math.max(1, Math.floor(height * pixelRatio))
+    this.sketch.uniforms.uResolution.value.set(w, h)
   }
 
-  /**
-   * 씬을 렌더타깃에 그린 뒤 종이 질감을 입혀 화면에 출력.
-   * @param {THREE.Scene} scene
-   * @param {THREE.Camera} camera
-   * @param {number} elapsed
-   */
   render(scene, camera, elapsed) {
-    this.material.uniforms.uTime.value = elapsed
-    // 종이질감 파라미터를 CONFIG에서 매 프레임 동기화 → 실시간 튜닝
-    this.material.uniforms.uGrain.value = CONFIG.paper.grain
-    this.material.uniforms.uVignette.value = CONFIG.paper.vignette
-    this.material.uniforms.uVignetteSoftness.value = CONFIG.paper.vignetteSoftness
+    this.renderPass.scene = scene
+    this.renderPass.camera = camera
+    this.gtao.scene = scene
+    this.gtao.camera = camera
 
-    const d = CONFIG.dream
-    const u = this.material.uniforms
-    u.uBloomThreshold.value = d.bloomThreshold
-    u.uBloomStrength.value = d.bloomStrength
-    u.uBloomRadius.value = d.bloomRadius
-    u.uWarmTint.value = d.warmTint
-    u.uWarmColor.value.set(d.warmColor)
-    u.uLift.value = d.lift
-    u.uHaze.value = d.haze
-    u.uSaturation.value = d.saturation
+    const u = this.sketch.uniforms
+    const p = CONFIG.painterly
+    u.uTime.value = elapsed
+    u.uEdgeThreshold.value = p.edgeThreshold
+    u.uEdgeSoftness.value = p.edgeSoftness
+    u.uInkColor.value.set(p.inkColor)
+    u.uInkStrength.value = p.inkStrength
+    u.uHatchScale.value = p.hatchScale
+    u.uHatchStrength.value = p.hatchStrength
+    u.uHatchInk.value.set(p.hatchInk)
+    u.uCelLevels.value = p.celLevels
+    u.uCelMix.value = p.celMix
+    u.uPaper.value = p.paper
+    u.uPaperScale.value = p.paperScale
+    u.uWash.value = p.wash
+    u.uWashColor.value.set(p.washColor)
+    u.uSaturation.value = p.saturation
+    u.uLift.value = p.lift
+    u.uShadowTint.value.set(p.shadowTint)
+    u.uHighlightTint.value.set(p.highlightTint)
+    u.uVignette.value = p.vignette
 
-    if (!this.enabled) {
-      this.renderer.setRenderTarget(null)
-      this.renderer.render(scene, camera)
-      return
-    }
-
-    // 1-pass: 씬 → 렌더타깃
-    this.renderer.setRenderTarget(this.renderTarget)
-    this.renderer.render(scene, camera)
-
-    // 2-pass: 렌더타깃 → 화면(종이 질감 적용)
-    this.renderer.setRenderTarget(null)
-    this.renderer.render(this.quadScene, this.quadCamera)
+    this.composer.render()
   }
 
   dispose() {
-    this.renderTarget.dispose()
-    this.material.dispose()
+    this.composer.dispose()
   }
 }

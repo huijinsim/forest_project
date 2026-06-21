@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { CONFIG } from '../config.js'
-import { ToonMaterial } from '../materials/ToonMaterial.js'
 
 // ─────────────────────────────────────────────────────────────
 // Butterfly — 보라·핑크 나비 (나무 사이, 자연 크기)
@@ -16,34 +15,38 @@ function buildWing() {
   return g
 }
 
-function addMesh(parent, geo, mat, outlineMat, x, y, z, sx = 1) {
+function addMesh(parent, geo, mat, x, y, z, sx = 1) {
   const mesh = new THREE.Mesh(geo, mat)
   mesh.position.set(x, y, z)
   mesh.scale.x = sx
-  const outline = new THREE.Mesh(geo, outlineMat)
-  outline.position.copy(mesh.position)
-  outline.scale.copy(mesh.scale)
-  parent.add(mesh, outline)
+  parent.add(mesh)
   return mesh
 }
 
-function buildButterflyMesh(color, outlineMat) {
+function buildButterflyMesh(color) {
   const wingGeo = buildWing()
   const bodyGeo = new THREE.CylinderGeometry(0.018, 0.022, 0.22, 5)
   bodyGeo.rotateZ(Math.PI / 2)
 
-  const mat = new ToonMaterial({ color, wind: false })
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.7,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 0.18,
+  })
   const g = new THREE.Group()
 
-  const lw = addMesh(g, wingGeo, mat, outlineMat, -0.04, 0.02, 0)
-  const rw = addMesh(g, wingGeo, mat, outlineMat, 0.04, 0.02, 0, -1)
-  addMesh(g, bodyGeo, mat, outlineMat, 0, 0, 0)
+  const lw = addMesh(g, wingGeo, mat, -0.04, 0.02, 0)
+  const rw = addMesh(g, wingGeo, mat, 0.04, 0.02, 0, -1)
+  addMesh(g, bodyGeo, mat, 0, 0, 0)
 
   return { group: g, leftWing: lw, rightWing: rw, mat }
 }
 
 export class Butterflies {
-  constructor(scene, rng, treeSlots, outlineMat) {
+  constructor(scene, rng, treeSlots) {
     this.scene = scene
     this.entries = []
     this.pickables = []
@@ -55,7 +58,7 @@ export class Butterflies {
 
     for (let i = 0; i < cfg.count; i++) {
       const color = colors[i % colors.length]
-      const { group, leftWing, rightWing, mat } = buildButterflyMesh(color, outlineMat)
+      const { group, leftWing, rightWing, mat } = buildButterflyMesh(color)
       this.materials.push(mat)
 
       let x
@@ -130,9 +133,5 @@ export class Butterflies {
       b.leftWing.rotation.z = flap
       b.rightWing.rotation.z = -flap
     }
-  }
-
-  updateMaterials(elapsed) {
-    for (const m of this.materials) m.update(elapsed)
   }
 }

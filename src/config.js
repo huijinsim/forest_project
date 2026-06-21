@@ -1,31 +1,65 @@
 // ─────────────────────────────────────────────────────────────
-// config.js — 산속 숲 일러스트(970A…) 색감·구도 기준
+// config.js — Ethereal Forest 설정
 // ─────────────────────────────────────────────────────────────
 
 export const CONFIG = {
   renderer: {
     maxPixelRatio: 1.5,
-    clearColor: '#f0dcc8',
+    clearColor: '#f5e8cc',
+    toneMappingExposure: 1.14,
   },
 
-  // 줌 0 = 숲 전체(멀리), 1 = 나무 사이(가까이)
+  dayCycle: {
+    default: 0.38,
+  },
+
+  // Summer Afternoon 무드 — 따뜻한 오후 빛 + 부드러운 발광
+  quality: {
+    aoRadius: 2.4,
+    aoScale: 0.38,
+    bloomStrength: 0.1,
+    bloomRadius: 0.72,
+    bloomThreshold: 0.78,
+  },
+
+  painterly: {
+    edgeThreshold: 0.2,
+    edgeSoftness: 0.34,
+    inkColor: '#4a4438',
+    inkStrength: 0.22,
+    hatchScale: 4.0,
+    hatchStrength: 0.0,
+    hatchInk: '#5a7058',
+    celLevels: 7,
+    celMix: 0.1,
+    paper: 0.015,
+    paperScale: 2.8,
+    wash: 0.05,
+    washColor: '#f8ecd8',
+    saturation: 1.06,
+    lift: 0.022,
+    shadowTint: '#5a7058',
+    highlightTint: '#fff0d0',
+    vignette: 0.04,
+  },
+
+  // 숲 초입길 시점 (길 입구 위쪽에서 안쪽을 내려다봄)
   camera: {
     overview: {
-      position: [0, 16, 68],
-      target: [0, 5, -38],
-      fov: 50,
+      position: [-7, 22, 92],
+      target: [2, 6, 30],
+      fov: 38,
     },
     close: {
-      position: [0, 4.2, 17],
-      target: [0, 3.8, -16],
-      fov: 46,
+      position: [-6, 20, 84],
+      target: [6, 6, 22],
+      fov: 34,
     },
     zoom: {
       value: 0.78,
       default: 0.78,
-      locked: false,
-      speed: 0.0014,
-      damping: 0.1,
+      speed: 0.0022,
+      damping: 0.12,
     },
     pan: {
       value: 0,
@@ -69,13 +103,13 @@ export const CONFIG = {
   popups: {
     green: {
       bg: '#4a7a48',
-      title: '숲의 이야기',
-      body: '고요한 나무 사이, 바람과 빛이 속삭입니다.',
+      title: 'About Me',
+      body: '공간과 감각, 기술이 만나는 접점을 탐구하는 디자이너 심희진의 이야기.',
     },
     pink: {
       bg: '#c96a8a',
-      title: '나비의 속삭임',
-      body: '보랏빛·분홍빛 날개가 숲을 가로지릅니다.',
+      title: 'Works',
+      body: '자연의 언어를 디지털로 번역한 프로젝트들을 소개합니다.',
     },
   },
 
@@ -97,49 +131,86 @@ export const CONFIG = {
 
   light: {
     direction: [-0.22, 0.52, 0.48],
-    color: '#ffe8c0',
-    ambient: 0.84,
+    color: '#f4f2ec',
+    ambientColor: '#c8dcd8',
+    bounceColor: '#a898a8',
+    ambient: 0.94,
     highlight: 0.14,
+    skyFill: 0.26,
+    lightMix: 0.12,
+    bounceStrength: 0.1,
+    moodColor: '#c0d0c8',
+    moodStrength: 0.32,
+    groundMoodStrength: 0.4,
   },
 
   outline: {
-    width: 0.007,
-    color: '#5a5e52',
+    width: 0.008,
+    color: '#484840',
   },
 
-  fog: {
-    color: '#f0dcc8',
-    near: 16,
-    far: 108,
+  /** 3D 스케치 선 — 해칭·외곽선·포스트 엣지 */
+  sketch: {
+    hatchStrength: 0.2,
+    ink: '#484840',
+    edgeStrength: 0.28,
+    edgeThreshold: 0.055,
+    inkNoise: 0.36,
+    outlineWobble: 0.0045,
+  },
+
+  /** 2.5D — 3D 메시 Y축 눌림 + 플랫 일러스트 */
+  flat25d: {
+    squashY: 0.36,
+    normalFlatten: 0.98,
+    shadeBands: 2,
+    layerStrength: 0.92,
+    layerFog: 0.42,
+    colorLevels: 10,
+    fogWash: '#dce8d8',
+    paperStage: 0.04,
   },
 
   sky: {
-    top: '#c8d0e0',
-    bottom: '#f5ddb0',
-    horizon: '#f0b890',
-    sunset: '#e89098',
+    top: '#5a98d8',
+    bottom: '#8ec8f0',
+    horizon: '#6eb0e4',
+    sunset: '#78b8e8',
     radius: 420,
+    celestialX: -0.92,
+    celestialY: 0.22,
+    isMoon: 0,
   },
 
-  // 몽환적 포스트 — 블룸·따뜻한 색감·헤이즈
+  // 몽환적 포스트 FX
   dream: {
-    bloomThreshold: 0.48,
-    bloomStrength: 0.42,
-    bloomRadius: 3.2,
-    warmTint: 0.28,
-    warmColor: '#fff0d8',
-    lift: 0.035,
-    haze: 0.22,
-    saturation: 0.9,
+    bloomThreshold: 0.64,
+    bloomStrength: 0.045,
+    bloomRadius: 2.0,
+    warmTint: 0.012,
+    warmColor: '#f0ece4',
+    lift: 0.02,
+    haze: 0.012,
+    saturation: 0.78,
   },
 
-  // 구름 — 하늘에 은은하게 녹아드는 레이어
-  clouds: {
+  // 구름
+    clouds: {
     driftAmp: 0.1,
-    opacity: 0.36,       // 낮을수록 더 투명·덜 튐
-    skyBlend: 0.62,      // 하늘색과 섞는 비율
+    opacity: 0.12,
+    skyBlend: 0.94,
+    // GLB 구름 모델 (디오라마 주변에 떠 있음)
+    models: [
+      { id: 'cloud-puff', url: '/models/cloud-puff.glb', size: 18 },
+    ],
+    count: 9,
+    minScale: 0.7,
+    maxScale: 1.5,
+    yMin: 38,
+    yMax: 66,
+    radiusMin: 0.55,
+    radiusMax: 1.25,
     items: [
-      // [x, y, z, scale, variant(0~2), shade(0밝음/1그림자)]
       [-58, 34, -118, 6.2, 2, 0],
       [12, 38, -125, 7.0, 2, 0],
       [68, 32, -112, 5.4, 2, 1],
@@ -154,75 +225,155 @@ export const CONFIG = {
     scatter: 8,
   },
 
+  /** 액자 미리보기 — PNG 구름 (풀스크린에서는 숨김) */
+  frameClouds: {
+    seed: 9042,
+    urls: ['/cloud/cloud1.PNG', '/cloud/cloud2.PNG', '/cloud/cloud3.PNG'],
+    perImage: 3,
+    sizeVw: 46,
+    scaleMin: 0.34,
+    scaleMax: 0.62,
+    driftSpeed: 2.4,
+    bobMin: 0.8,
+    bobMax: 2.8,
+    bobSpeedMin: 0.22,
+    bobSpeedMax: 0.48,
+    rotMin: 0.6,
+    rotMax: 2.4,
+    rotSpeedMin: 0.1,
+    rotSpeedMax: 0.22,
+  },
+
+  /** 디오라마 섬 — 받침대 위 정사각 숲 + 언덕 + 길 */
+  diorama: {
+    // GLB 지형 사용 (없으면 절차적 언덕)
+    terrainUrl: '/models/hill-terrain2.glb',
+    glbHeight: 13,
+    glbFill: 1.1,
+    glbGrid: 220,
+    glbSmooth: 5,
+    size: 150,
+    grid: 320,
+    edgeMargin: 14,
+    base: 11,
+    rimHeight: 1.8,
+    rimColor: '#8cb868',
+    grassLow: '#5a8f48',
+    grassHigh: '#a8d068',
+    soilColor: '#c4a888',
+    colorHeight: 11,
+    surfaceNoise: 2.0,
+    hills: [
+      { x: 0, z: -14, amp: 9, r: 62 },
+      { x: -34, z: 18, amp: 4.5, r: 44 },
+      { x: 36, z: 4, amp: 5, r: 46 },
+      { x: 12, z: -40, amp: 5.5, r: 50 },
+    ],
+    path: [
+      [-8, 70],
+      [-2, 46],
+      [14, 26],
+      [4, 4],
+      [-16, -16],
+      [-6, -38],
+      [10, -58],
+    ],
+    pathWidth: 8,
+    pathCarve: 0.7,
+    pathColor: '#dcc8a8',
+    rockCount: 46,
+  },
+
   forest: {
     seed: 2026,
     treeModelHeight: 5.8,
-    treeModelMaterial: {
-      tint: '#d4dcb8',
-      colorTop: '#e8f0cc',
-      colorBottom: '#c8d4b4',
-      groundTone: '#dce8c4',
-      groundMix: 0.32,
-      variation: 0.09,
-      brightness: 1.06,
-      saturation: 0.62,
+    groundSamplePad: 1.4,
+    groundLift: 0.02,
+    treeGroundSink: -0.06,
+    terrain: {
+      url: '/models/emerald-hills.glb',
+      width: 400,
+      height: 8,
+      gridSize: 96,
     },
-    /** GLB 나무 종류 — 기존 + 추가 심기 */
+    treeModelMaterial: {
+      tint: '#c8d4b0',
+      colorTop: '#dce8c4',
+      colorBottom: '#8a8490',
+      groundTone: '#d0dcc0',
+      groundMix: 0.22,
+      variation: 0.08,
+      brightness: 1.08,
+      saturation: 0.72,
+    },
+    /** GLB 나무 종류 */
     treeModels: [
       {
-        id: 'canopy',
-        url: '/models/tree.glb',
-        height: 5.8,
-        count: 100,
+        id: 'soft-cypress',
+        url: '/models/soft-cypress.glb',
+        height: 6.2,
+        count: 140,
         minScale: 0.72,
         maxScale: 1.28,
         material: {
-          tint: '#d8e0c0',
-          colorTop: '#ecf2d4',
-          colorBottom: '#ccd8b4',
-          groundTone: '#e0e8c8',
-          groundMix: 0.3,
-          variation: 0.1,
-          brightness: 1.08,
-          saturation: 0.64,
+          tint: '#4a7a52',
+          trunk: '#8b7355',
+          trunkRatio: 0.22,
         },
       },
       {
-        id: 'christmas',
-        url: '/models/tree-christmas.glb',
-        height: 6.2,
-        count: 55,
+        id: 'soft-pine',
+        url: '/models/soft-pine.glb',
+        height: 6.0,
+        count: 130,
+        minScale: 0.64,
+        maxScale: 1.16,
+        material: {
+          tint: '#88c060',
+          trunk: '#8b7355',
+          trunkRatio: 0.18,
+        },
+      },
+      {
+        id: 'soft-bubble',
+        url: '/models/soft-bubble.glb',
+        height: 5.4,
+        count: 160,
         minScale: 0.68,
-        maxScale: 1.18,
-        canopyRadiusScale: 0.78,
+        maxScale: 1.22,
+        groundSink: -0.12,
         material: {
-          tint: '#ccd8b8',
-          colorTop: '#e4ecd0',
-          colorBottom: '#b8c8a4',
-          groundTone: '#d8e4c4',
-          groundMix: 0.34,
-          variation: 0.11,
-          brightness: 1.04,
-          saturation: 0.6,
+          tint: '#9cd070',
+          trunk: '#9a8068',
+          trunkRatio: 0.12,
         },
       },
       {
-        id: 'tall',
-        url: '/models/tree-tall.glb',
-        height: 6.4,
-        count: 48,
-        minScale: 0.58,
-        maxScale: 1.02,
-        canopyRadiusScale: 0.72,
+        id: 'plant-a',
+        url: '/models/plant-a.glb',
+        height: 1.15,
+        count: 70,
+        minScale: 0.32,
+        maxScale: 0.58,
+        canopyRadiusScale: 0.38,
+        groundSink: -0.05,
         material: {
-          tint: '#c4d0b0',
-          colorTop: '#dce6c8',
-          colorBottom: '#b0bc98',
-          groundTone: '#d0dcc0',
-          groundMix: 0.36,
-          variation: 0.08,
-          brightness: 1.02,
-          saturation: 0.58,
+          tint: '#88c060',
+          trunk: '#8b7355',
+        },
+      },
+      {
+        id: 'plant-b',
+        url: '/models/plant-b.glb',
+        height: 1.25,
+        count: 65,
+        minScale: 0.3,
+        maxScale: 0.55,
+        canopyRadiusScale: 0.36,
+        groundSink: -0.05,
+        material: {
+          tint: '#a0d070',
+          trunk: '#8b7355',
         },
       },
     ],
@@ -232,79 +383,46 @@ export const CONFIG = {
     clearingCenter: [0, -4],
     clearingRadius: 2.6,
     bushCount: 210,
-    grassClumps: 95,
     cattails: 52,
     ferns: 68,
     rows: 10,
     treeScaleMul: 1.5,
     minTreeScale: 0.72,
     maxTreeScale: 1.28,
-    canopyPadding: 0.92,
+    canopyPadding: 1.04,
     canopyRadiusScale: 0.82,
   },
 
-  mountains: [
-    // [x, z, 가로폭, 높이, Z두께] — 뾰족한 능선 실루엣
-    [-58, -218, 148, 96, 42],
-    [8, -235, 172, 108, 48],
-    [62, -222, 128, 82, 36],
-    [-118, -228, 118, 72, 32],
-    [118, -225, 138, 88, 38],
-  ],
+  /** 2D 배경 — 산 없음, 흰 하늘 */
+  skyMountains: {
+    horizonFallback: 0.52,
+    tint: '#ffffff',
+    tintMid: '#ffffff',
+    tintNear: '#ffffff',
+    nightTint: '#3d4540',
+    farSkyMix: 0.28,
+    midSkyMix: 0.22,
+    nearSkyMix: 0.16,
+    layers: [],
+  },
 
   paper: {
-    grain: 0.028,
-    vignette: 0.18,
-    vignetteSoftness: 0.62,
+    grain: 0.022,
+    vignette: 0.08,
+    vignetteSoftness: 0.72,
   },
 }
 
-// ── 팔레트: 일러스트 추출 ─────────────────────────────────
 export const PALETTE = {
-  // 짙은 침엽 (중·전경만)
-  foliageDark: ['#556848', '#5a7048', '#526040', '#607050'],
-  // 밝은 잎 (중·전경)
-  foliageLight: ['#7a9a5c', '#8da466', '#9bb576', '#a8c078'],
-  // 원경·안개 속 (밝고 탁한 녹색)
-  foliageMist: ['#a8b490', '#b0bc98', '#9aab82', '#b8c4a0'],
-  trunk: '#9a7048',
-  trunkDark: '#7a5838',
-  coniferLight: '#c8dc62',
-  coniferDark: '#2e5c32',
-  ground: '#c8d4a8',
-  groundWarm: '#d8dcb8',
-  groundPatchLight: '#d4dea8',
-  groundPatchDark: '#a8b888',
-  groundDirt: '#9a9478',
-  bush: '#5a6f4a',
-  bushDark: '#4b5d3f',
-  mountain: ['#a8bc98', '#b8c8a8', '#98b090'],
-  mountainShadow: '#8aa080',
-  cloud: '#f0e8cc',
-  cloudShade: '#e5dcc0',
-  grass: '#9bab7a',
-  fern: '#b4c494',
-  cattailStalk: '#8a9078',
-  cattailTip: '#d4a85a',
-  cattailTipBright: '#e8c060',
-}
-
-/** 잎 색 선택: depth 0(먼)~1(가까움) — 원경은 안개색에 가깝게 */
-export function pickFoliageColor(rng, depth) {
-  const dark = PALETTE.foliageDark
-  const light = PALETTE.foliageLight
-  const mist = PALETTE.foliageMist
-
-  if (depth < 0.38) return mist[Math.floor(rng() * mist.length)]
-  if (depth < 0.58) {
-    return rng() > 0.55
-      ? mist[Math.floor(rng() * mist.length)]
-      : light[Math.floor(rng() * light.length)]
-  }
-  if (depth < 0.75) {
-    return rng() > 0.4
-      ? light[Math.floor(rng() * light.length)]
-      : dark[Math.floor(rng() * dark.length)]
-  }
-  return light[Math.floor(rng() * light.length)]
+  ground: '#a8d068',
+  groundWarm: '#f8ecd8',
+  groundPatchLight: '#b8dc78',
+  groundPatchDark: '#5a8f48',
+  groundDirt: '#dcc8a8',
+  bush: '#5a8f48',
+  cloud: '#fff4e0',
+  cloudShade: '#f0e0c8',
+  fern: '#98c868',
+  cattailStalk: '#a09078',
+  cattailTipBright: '#f0d878',
 }

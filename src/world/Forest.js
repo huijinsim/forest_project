@@ -1,16 +1,22 @@
 import * as THREE from 'three'
 import { CONFIG, PALETTE } from '../config.js'
-import { ToonMaterial } from '../materials/ToonMaterial.js'
-import { OutlineMaterial } from '../materials/OutlineMaterial.js'
-import { GroundMaterial } from '../materials/GroundMaterial.js'
-import { SkyMaterial } from '../materials/SkyMaterial.js'
-import { buildBush } from './Tree.js'
-import { buildGrassClump, buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
-import { CloudMaterial } from '../materials/CloudMaterial.js'
-import { buildCloudByVariant } from './Cloud.js'
-import { buildMountain, buildMountainRidge } from './Mountain.js'
-import { Butterflies } from './Butterfly.js'
+import { buildBush, buildCattailStalk, buildCattailTip, buildSmallFern } from './Flora.js'
 import { createTreeInstances, treeFocusRoot } from './TreeModel.js'
+import { buildDiorama } from './Diorama.js'
+import { createMeshHeightSampler } from './Terrain.js'
+
+function standardMat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: opts.roughness ?? 0.95,
+    metalness: 0.0,
+    side: opts.side ?? THREE.FrontSide,
+    transparent: opts.transparent ?? false,
+    opacity: opts.opacity ?? 1,
+    emissive: opts.emissive ? new THREE.Color(opts.emissive) : new THREE.Color('#000000'),
+    emissiveIntensity: opts.emissiveIntensity ?? 1,
+  })
+}
 
 function mulberry32(seed) {
   let a = seed >>> 0
@@ -25,9 +31,12 @@ function mulberry32(seed) {
 
 export class Forest {
   /** @param {Awaited<ReturnType<import('./TreeModel.js').loadAllTreeTemplates>>} treeTemplates */
-  constructor(treeTemplates) {
+  /** @param {Awaited<ReturnType<import('./Terrain.js').loadTerrain>>} [terrain] */
+  constructor(treeTemplates, cloudTemplates = [], prebuiltDiorama = null) {
     this.scene = new THREE.Scene()
     this.rng = mulberry32(CONFIG.forest.seed)
+    this.cloudTemplates = cloudTemplates
+    this._prebuiltDiorama = prebuiltDiorama
     this.materials = []
     this.pickables = []
     this.treeLayers = CONFIG.forest.treeModels.map((cfg, i) => ({
@@ -37,17 +46,19 @@ export class Forest {
       instancedMesh: null,
     }))
     this.treeSlots = []
+    this.terrainMesh = null
+    this._sampleTerrainY = null
 
+    this._initLights()
     this._initMaterials()
-    this._buildSky()
-    this._buildClouds()
     this._buildGround()
-    this._buildMountains()
+    this._buildClouds()
     this._buildTrees()
     this._buildTreeInstances()
     this._buildUnderstory()
     this._buildForeground()
-    this.butterflies = new Butterflies(this.scene, this.rng, this.treeSlots, this.outlineMat)
+    this._buildRocks()
+    this.butterflies = null
   }
 
   _track(mat) {
@@ -55,98 +66,132 @@ export class Forest {
     return mat
   }
 
-  _initMaterials() {
-    this.outlineMat = this._track(new OutlineMaterial(true))
-    this.bushMat = this._track(new ToonMaterial({ color: PALETTE.bush, wind: true }))
-    this.grassMat = this._track(new ToonMaterial({ color: PALETTE.grass, wind: true }))
-    this.fernMat = this._track(new ToonMaterial({ color: PALETTE.fern, wind: true }))
-    this.cattailStalkMat = this._track(new ToonMaterial({ color: PALETTE.cattailStalk, wind: true }))
-    this.cattailTipMat = this._track(new ToonMaterial({ color: PALETTE.cattailTipBright, wind: true }))
-    this.cloudMat = this._track(new CloudMaterial(PALETTE.cloud))
-    this.cloudShadeMat = this._track(new CloudMaterial(PALETTE.cloudShade))
-    this.cloudEntries = []
+  _initLights() {
+    this.ambient = new THREE.AmbientLight('#ffffff', 0.4)
+    this.scene.add(this.ambient)
+
+    this.hemi = new THREE.HemisphereLight('#f8ecd8', '#8cb868', 0.85)
+    this.scene.add(this.hemi)
+
+    this.sun = new THREE.DirectionalLight('#ffe8b8', 1.25)
+    this.sun.position.set(60, 90, 40)
+    this.sun.castShadow = true
+    this.sun.shadow.mapSize.set(2048, 2048)
+    this.sun.shadow.camera.near = 1
+    this.sun.shadow.camera.far = 320
+    const s = 130
+    this.sun.shadow.camera.left = -s
+    this.sun.shadow.camera.right = s
+    this.sun.shadow.camera.top = s
+    this.sun.shadow.camera.bottom = -s
+    this.sun.shadow.bias = -0.0004
+    this.sun.shadow.normalBias = 0.6
+    this.sun.shadow.radius = 6
+    this.sun.shadow.blurSamples = 16
+    this.scene.add(this.sun)
+    this.scene.add(this.sun.target)
   }
 
-  _buildSky() {
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(CONFIG.sky.radius, 32, 16),
-      new SkyMaterial(),
-    )
-    sky.renderOrder = -2
-    this.scene.add(sky)
+  _initMaterials() {
+    this.bushMat = standardMat(PALETTE.bush, { roughness: 0.95, side: THREE.DoubleSide })
+    this.fernMat = standardMat(PALETTE.fern, { roughness: 0.95, side: THREE.DoubleSide })
+    this.cattailStalkMat = standardMat(PALETTE.cattailStalk, { roughness: 0.9 })
+    this.cattailTipMat = standardMat(PALETTE.cattailTipBright, { roughness: 0.8 })
+    this.cloudEntries = []
   }
 
   _buildClouds() {
     const rng = this.rng
     const cfg = CONFIG.clouds
+    if (!this.cloudTemplates.length) return
 
-    const addCloud = (x, y, z, scale, variant, shade) => {
-      const geo = buildCloudByVariant(rng, variant)
-      const mat = shade ? this.cloudShadeMat : this.cloudMat
-      const g = new THREE.Group()
+    const half = CONFIG.diorama.size * 0.5
+    const count = cfg.count ?? 9
+
+    for (let i = 0; i < count; i++) {
+      const tpl = this.cloudTemplates[i % this.cloudTemplates.length]
+      const a = (i / count) * Math.PI * 2 + rng() * 0.6
+      const rad = half * (cfg.radiusMin + rng() * (cfg.radiusMax - cfg.radiusMin))
+      const x = Math.cos(a) * rad
+      const z = Math.sin(a) * rad
+      const y = cfg.yMin + rng() * (cfg.yMax - cfg.yMin)
+      const scale = cfg.minScale + rng() * (cfg.maxScale - cfg.minScale)
+
+      const g = tpl.object.clone(true)
       g.position.set(x, y, z)
-      g.scale.setScalar(scale)
+      g.scale.multiplyScalar(scale)
       g.rotation.y = rng() * Math.PI * 2
       g.renderOrder = 1
-      g.add(new THREE.Mesh(geo, mat))
       this.scene.add(g)
+
       this.cloudEntries.push({
         group: g,
         baseX: x,
+        baseY: y,
         phase: rng() * Math.PI * 2,
-        speed: 0.12 + rng() * 0.1,
-        amp: 0.8 + rng() * 1.6,
+        speed: 0.05 + rng() * 0.06,
+        amp: 1.5 + rng() * 3.0,
+        bob: 0.6 + rng() * 1.2,
       })
-    }
-
-    cfg.items.forEach(([x, y, z, scale, variant, shade]) => {
-      addCloud(x, y, z, scale, variant, shade)
-    })
-
-    for (let i = 0; i < cfg.scatter; i++) {
-      addCloud(
-        (rng() * 2 - 1) * 130,
-        24 + rng() * 28,
-        -95 - rng() * 65,
-        3.2 + rng() * 3.2,
-        Math.floor(rng() * 3),
-        rng() > 0.6 ? 1 : 0,
-      )
     }
   }
 
   _buildGround() {
-    const geo = new THREE.PlaneGeometry(900, 900, 1, 1)
-    geo.rotateX(-Math.PI / 2)
-    const groundMat = this._track(new GroundMaterial())
-    this.scene.add(new THREE.Mesh(geo, groundMat))
+    this.diorama = this._prebuiltDiorama ?? buildDiorama(this.rng)
 
-    const [cx, cz] = CONFIG.forest.clearingCenter
-    const pad = new THREE.Mesh(
-      new THREE.CircleGeometry(CONFIG.forest.clearingRadius + 1.5, 24),
-      this._track(new ToonMaterial({ color: PALETTE.groundWarm, wind: false })),
-    )
-    pad.rotation.x = -Math.PI / 2
-    pad.position.set(cx, 0.015, cz)
-    this.scene.add(pad)
+    const mesh = new THREE.Mesh(this.diorama.geometry, this._track(this.diorama.material))
+    mesh.name = 'terrain'
+    mesh.frustumCulled = false
+    mesh.receiveShadow = true
+    mesh.castShadow = true
+    this.scene.add(mesh)
+    this.terrainMesh = mesh
+
+    this.scene.add(this.diorama.baseGroup)
+
+    mesh.updateMatrixWorld(true)
+    this._sampleTerrainY = createMeshHeightSampler(mesh)
+    this._half = this.diorama.half
+    this._margin = this.diorama.margin
+    this._isOnPath = this.diorama.isOnPath
   }
 
-  _buildMountains() {
-    const rng = this.rng
-    const builders = [buildMountain, buildMountain, buildMountainRidge, buildMountain, buildMountainRidge]
+  /** 디오라마 내 무작위 좌표 (테두리·길 회피) */
+  _pickGroundSpot(rng, pathPad = 1.5) {
+    const lim = this._half - this._margin - 2
+    for (let t = 0; t < 16; t++) {
+      const x = (rng() * 2 - 1) * lim
+      const z = (rng() * 2 - 1) * lim
+      if (this._isOnPath(x, z, pathPad)) continue
+      return [x, z]
+    }
+    return null
+  }
 
-    CONFIG.mountains.forEach(([x, z, width, height, depth], i) => {
-      const build = builders[i % builders.length]
-      const geo = build(width, height, depth, rng)
-      const color = PALETTE.mountain[i % PALETTE.mountain.length]
-      const mat = this._track(new ToonMaterial({ color, wind: false }))
-      const m = new THREE.Mesh(geo, mat)
-      m.position.set(x, 0, z)
-      this.scene.add(m)
-      const outline = new THREE.Mesh(geo, this.outlineMat)
-      outline.position.copy(m.position)
-      this.scene.add(outline)
-    })
+  /** 지면 높이 — footprint>0 이면 주변 최고점(소품용), 나무는 _treeGroundY 사용 */
+  _groundY(x, z, offset = 0, footprint = 0) {
+    if (!this._sampleTerrainY) return offset
+
+    let h = this._sampleTerrainY(x, z, 0)
+
+    if (footprint > 0) {
+      const steps = 8
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2
+        const px = x + Math.cos(a) * footprint
+        const pz = z + Math.sin(a) * footprint
+        h = Math.max(h, this._sampleTerrainY(px, pz, 0))
+      }
+    }
+
+    const lift = CONFIG.forest.groundLift ?? 0
+    return h + offset + lift
+  }
+
+  /** 나무 — 해당 위치 지면에 정확히 접지 (주변 max·lift 없음) */
+  _treeGroundY(x, z, sink = 0) {
+    if (!this._sampleTerrainY) return sink
+    return this._sampleTerrainY(x, z, 0) + sink
   }
 
   _canPlaceTree(x, z, radius) {
@@ -176,7 +221,7 @@ export class Forest {
       z,
       scale,
       rotY,
-      focusY: layer.template.height * scale * 0.45,
+      focusY: layer.template.height * scale * 0.55,
     })
     this._registerTree(x, z, r)
     return true
@@ -185,6 +230,10 @@ export class Forest {
   _buildTreeInstances() {
     for (const layer of this.treeLayers) {
       if (!layer.placements.length) continue
+      for (const t of layer.placements) {
+        const sink = layer.config.groundSink ?? CONFIG.forest.treeGroundSink ?? 0
+        t.y = this._treeGroundY(t.x, t.z, sink)
+      }
       layer.instancedMesh = createTreeInstances(layer.template, layer.placements)
       this._track(layer.instancedMesh.material)
       this.scene.add(layer.instancedMesh)
@@ -201,35 +250,81 @@ export class Forest {
   _buildTrees() {
     const f = CONFIG.forest
     const rng = this.rng
-    const [cx, cz] = f.clearingCenter
     this.treeSlots = []
 
+    // 종류를 섞어 라운드로빈 → 한 종이 한 구역에 몰리지 않음
+    const queue = []
     for (let li = 0; li < this.treeLayers.length; li++) {
-      const layer = this.treeLayers[li]
-      const cfg = layer.config
-      let placed = 0
-      let guard = 0
+      const total = this.treeLayers[li].config.count
+      for (let i = 0; i < total; i++) queue.push(li)
+    }
+    for (let i = queue.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[queue[i], queue[j]] = [queue[j], queue[i]]
+    }
 
-      while (placed < cfg.count && guard < cfg.count * 120) {
-        guard++
-        const row = Math.floor(rng() * f.rows)
-        const depthT = row / (f.rows - 1 || 1)
-        const z = f.zFar + (f.zNear - f.zFar) * depthT + (rng() - 0.5) * 6
-        const x = (rng() * 2 - 1) * f.areaX * (0.6 + depthT * 0.42)
+    let guard = 0
+    const guardMax = queue.length * 240
+    let qi = 0
 
-        const dx = x - cx
-        const dz = z - cz
-        if (Math.sqrt(dx * dx + dz * dz) < f.clearingRadius) continue
+    while (qi < queue.length && guard < guardMax) {
+      guard++
+      const li = queue[qi]
+      const cfg = this.treeLayers[li].config
 
-        const depth = (z - f.zFar) / (f.zNear - f.zFar)
-        const raw = (0.7 + rng() * 0.55) * (0.55 + depth * 0.6)
-        const minS = cfg.minScale ?? f.minTreeScale
-        const maxS = cfg.maxScale ?? f.maxTreeScale
-        const s = THREE.MathUtils.clamp(raw, minS, maxS) * (f.treeScaleMul ?? 1)
-
-        if (!this._tryAddTree(li, x, z, s, rng() * Math.PI * 2)) continue
-        placed++
+      const spot = this._pickGroundSpot(rng, 2.0)
+      if (!spot) {
+        qi++
+        continue
       }
+      const [x, z] = spot
+
+      // 언덕(높은 곳)일수록 더 크게, 길가는 작게
+      const groundH = this._sampleTerrainY(x, z, 0)
+      const hillT = THREE.MathUtils.clamp(groundH / (CONFIG.diorama.colorHeight || 14), 0, 1)
+      const raw = (0.66 + rng() * 0.5) * (0.7 + hillT * 0.5)
+      const minS = cfg.minScale ?? f.minTreeScale
+      const maxS = cfg.maxScale ?? f.maxTreeScale
+      const s = THREE.MathUtils.clamp(raw, minS, maxS) * (f.treeScaleMul ?? 1)
+
+      if (!this._tryAddTree(li, x, z, s, rng() * Math.PI * 2)) continue
+      qi++
+    }
+  }
+
+  /** 저폴리 바위 무리 — 언덕 발치·길가 */
+  _buildRocks() {
+    const rng = this.rng
+    const count = CONFIG.diorama.rockCount ?? 0
+    if (!count) return
+
+    const rockMat = this._track(standardMat('#c4b5a0', { roughness: 1 }))
+    const rockMatDark = this._track(standardMat('#6a5e52', { roughness: 1 }))
+
+    for (let i = 0; i < count; i++) {
+      const spot = this._pickGroundSpot(rng, 0.4)
+      if (!spot) continue
+      const [x, z] = spot
+
+      const r = 0.5 + rng() * 1.6
+      const geo = new THREE.IcosahedronGeometry(r, 0)
+      const pos = geo.attributes.position
+      for (let v = 0; v < pos.count; v++) {
+        pos.setXYZ(
+          v,
+          pos.getX(v) * (0.7 + rng() * 0.6),
+          pos.getY(v) * (0.5 + rng() * 0.5),
+          pos.getZ(v) * (0.7 + rng() * 0.6),
+        )
+      }
+      geo.computeVertexNormals()
+
+      const rock = new THREE.Mesh(geo, rng() > 0.5 ? rockMat : rockMatDark)
+      rock.castShadow = true
+      rock.receiveShadow = true
+      rock.position.set(x, this._groundY(x, z, -r * 0.35), z)
+      rock.rotation.set(rng() * 0.4, rng() * Math.PI * 2, rng() * 0.4)
+      this.scene.add(rock)
     }
   }
 
@@ -238,16 +333,18 @@ export class Forest {
     const rng = this.rng
 
     for (let i = 0; i < f.bushCount; i++) {
+      const spot = this._pickGroundSpot(rng, 1.0)
+      if (!spot) continue
+      const [x, z] = spot
       const { foliage } = buildBush(rng)
       const g = new THREE.Group()
-      const depthT = rng()
-      const z = f.zNear - 0.5 - rng() * (f.zNear - f.zFar - 1)
-      const x = (rng() * 2 - 1) * f.areaX * (0.7 + depthT * 0.28)
-      g.position.set(x, -0.05, z)
+      g.position.set(x, this._groundY(x, z, -0.05), z)
       g.scale.setScalar(0.5 + rng() * 0.95)
       g.rotation.y = rng() * Math.PI * 2
-      g.add(new THREE.Mesh(foliage, this.bushMat))
-      g.add(new THREE.Mesh(foliage, this.outlineMat))
+      const bush = new THREE.Mesh(foliage, this.bushMat)
+      bush.castShadow = true
+      bush.receiveShadow = true
+      g.add(bush)
       this.scene.add(g)
     }
   }
@@ -255,77 +352,52 @@ export class Forest {
   _buildForeground() {
     const rng = this.rng
     const f = CONFIG.forest
-    const [cx, cz] = f.clearingCenter
 
-    const inClearing = (x, z) => {
-      const dx = x - cx
-      const dz = z - cz
-      return Math.sqrt(dx * dx + dz * dz) < f.clearingRadius
-    }
-
-    const pickSpot = (nearBias = 0) => {
-      for (let t = 0; t < 12; t++) {
-        const z =
-          nearBias > 0 && rng() < nearBias
-            ? 3 + rng() * 22
-            : f.zNear - 1 - rng() * (f.zNear - f.zFar - 2)
-        const depth = (z - f.zFar) / (f.zNear - f.zFar)
-        const x = (rng() * 2 - 1) * f.areaX * (0.65 + depth * 0.38)
-        if (!inClearing(x, z)) return [x, z]
-      }
-      return [(rng() * 2 - 1) * f.areaX * 0.5, 5 + rng() * 12]
-    }
-
-    for (let i = 0; i < f.grassClumps; i++) {
-      const [x, z] = pickSpot(0.35)
-      const geo = buildGrassClump(rng, 4 + Math.floor(rng() * 4))
-      const g = new THREE.Group()
-      g.position.set(x, 0, z)
-      g.rotation.y = rng() * Math.PI
-      g.scale.setScalar(0.75 + rng() * 0.7)
-      g.add(new THREE.Mesh(geo, this.grassMat))
-      g.add(new THREE.Mesh(geo, this.outlineMat))
-      this.scene.add(g)
-    }
+    const pickSpot = () => this._pickGroundSpot(rng, 0.8)
 
     for (let i = 0; i < f.cattails; i++) {
-      const [x, z] = pickSpot(0.55)
+      const spot = pickSpot()
+      if (!spot) continue
+      const [x, z] = spot
       const h = 1.0 + rng() * 1.6
       const g = new THREE.Group()
-      g.position.set(x, 0, z)
+      g.position.set(x, this._groundY(x, z), z)
       g.rotation.y = rng() * Math.PI * 2
 
       const stalkGeo = buildCattailStalk(h)
       const tipGeo = buildCattailTip(rng)
       const tip = new THREE.Mesh(tipGeo, this.cattailTipMat)
       tip.position.y = h + 0.08
+      tip.castShadow = true
 
-      g.add(new THREE.Mesh(stalkGeo, this.cattailStalkMat))
-      g.add(new THREE.Mesh(stalkGeo, this.outlineMat))
+      const stalk = new THREE.Mesh(stalkGeo, this.cattailStalkMat)
+      stalk.castShadow = true
+      g.add(stalk)
       g.add(tip)
-      g.add(new THREE.Mesh(tipGeo, this.outlineMat))
       this.scene.add(g)
     }
 
     for (let i = 0; i < f.ferns; i++) {
-      const [x, z] = pickSpot(0.4)
+      const spot = pickSpot()
+      if (!spot) continue
+      const [x, z] = spot
       const geo = buildSmallFern(rng)
       const g = new THREE.Group()
-      g.position.set(x, 0, z)
+      g.position.set(x, this._groundY(x, z), z)
       g.rotation.y = rng() * Math.PI * 2
       g.scale.setScalar(0.85 + rng() * 0.55)
-      g.add(new THREE.Mesh(geo, this.fernMat))
-      g.add(new THREE.Mesh(geo, this.outlineMat))
+      const fern = new THREE.Mesh(geo, this.fernMat)
+      fern.castShadow = true
+      g.add(fern)
       this.scene.add(g)
     }
   }
 
   update(elapsed) {
-    for (const m of this.materials) m.update(elapsed)
     this.butterflies?.update(elapsed)
-    this.butterflies?.updateMaterials(elapsed)
     for (const c of this.cloudEntries) {
       c.group.position.x = c.baseX + Math.sin(elapsed * c.speed + c.phase) * c.amp
+      c.group.position.y = c.baseY + Math.sin(elapsed * c.speed * 0.7 + c.phase) * c.bob
     }
   }
 

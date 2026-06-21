@@ -15,6 +15,10 @@ export class Renderer {
     })
     this.instance.setClearColor(new THREE.Color(CONFIG.renderer.clearColor), 1)
     this.instance.outputColorSpace = THREE.SRGBColorSpace
+    this.instance.toneMapping = THREE.ACESFilmicToneMapping
+    this.instance.toneMappingExposure = CONFIG.renderer.toneMappingExposure ?? 1.0
+    this.instance.shadowMap.enabled = true
+    this.instance.shadowMap.type = THREE.PCFSoftShadowMap
     container.appendChild(this.instance.domElement)
 
     const ov = CONFIG.camera.overview
@@ -31,20 +35,22 @@ export class Renderer {
   }
 
   resize() {
-    const w = this.container.clientWidth
-    const h = this.container.clientHeight
+    const rect = this.container.getBoundingClientRect()
+    const w = Math.max(1, Math.floor(rect.width))
+    const h = Math.max(1, Math.floor(rect.height))
     this.aspect = w / h
 
     const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio)
     this.instance.setPixelRatio(dpr)
-    this.instance.setSize(w, h)
+    // CSS(100%)로 표시 크기를 맞추고, 버퍼만 실제 픽셀에 맞춘다
+    this.instance.setSize(w, h, false)
 
     this.camera.aspect = this.aspect
     this.camera.updateProjectionMatrix()
   }
 
-  render(scene) {
-    this.instance.render(scene, this.camera)
+  render(scene, camera = this.camera) {
+    this.instance.render(scene, camera)
   }
 
   dispose() {
