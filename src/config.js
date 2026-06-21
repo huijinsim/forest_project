@@ -278,12 +278,13 @@ export const CONFIG = {
 
     plantMaterial: {
       roughness: 0.9,
-      trunkRatio: 0.16,
-      trunkBlend: 0.045,
-      trunkRadiusRatio: 0.16,
+      trunkRatio: 0.085,
+      trunkBlend: 0.02,
+      trunkRadiusRatio: 0.048,
+      trunkPalette: ['#88826d', '#b5ae9f', '#7d7458', '#92896e'],
     },
 
-    /** GLB 나무 — 종류마다 잎·기둥 단색 1쌍 */
+    /** GLB 나무 3종 — 잎색만 종류별, 기둥은 공통 4색 팔레트 */
     treeModels: [
       {
         id: 'cypress-asymmetric-a',
@@ -294,9 +295,6 @@ export const CONFIG = {
         maxScale: 1.22,
         material: {
           foliage: '#a1b15f',
-          trunk: '#88826d',
-          trunkRatio: 0.18,
-          trunkRadiusRatio: 0.14,
         },
       },
       {
@@ -308,9 +306,6 @@ export const CONFIG = {
         maxScale: 1.2,
         material: {
           foliage: '#8c9749',
-          trunk: '#b5ae9f',
-          trunkRatio: 0.18,
-          trunkRadiusRatio: 0.14,
         },
       },
       {
@@ -322,9 +317,6 @@ export const CONFIG = {
         maxScale: 1.2,
         material: {
           foliage: '#bfcb78',
-          trunk: '#7d7458',
-          trunkRatio: 0.14,
-          trunkRadiusRatio: 0.12,
         },
       },
     ],
@@ -341,10 +333,8 @@ export const CONFIG = {
       maxScale: 1.15,
       groundSink: -0.04,
       material: {
+        splitMode: 'foliage',
         foliage: '#aebb62',
-        trunk: '#92896e',
-        trunkRatio: 0.08,
-        trunkRadiusRatio: 0.2,
       },
     },
     /** 길가·풀숲 튤립 */
@@ -361,6 +351,7 @@ export const CONFIG = {
           splitMode: 'stem',
           foliage: '#f09830',
           trunk: '#5c8a42',
+          trunkPalette: ['#5c8a42'],
           trunkRatio: 0.22,
           trunkBlend: 0.025,
         },
@@ -377,6 +368,7 @@ export const CONFIG = {
           splitMode: 'stem',
           foliage: '#e04048',
           trunk: '#5c8a42',
+          trunkPalette: ['#5c8a42'],
           trunkRatio: 0.22,
           trunkBlend: 0.025,
         },
