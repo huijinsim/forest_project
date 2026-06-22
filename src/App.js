@@ -210,6 +210,22 @@ export class App {
     })
   }
 
+  _goBack() {
+    if (this.pageOverlay?.isOpen) {
+      this.pageOverlay.close()
+      return true
+    }
+    if (this.shinyCards.isExpanded()) {
+      this.shinyCards.closeExpanded()
+      return true
+    }
+    if (this._focusedTree) {
+      this._returnToOverview()
+      return true
+    }
+    return false
+  }
+
   _openWorksDetail() {
     this.butterflyCursor.setEnabled(false)
     this.pageOverlay.open('/works.html', () => {
@@ -329,17 +345,18 @@ export class App {
       if (e.code === 'Enter' && !e.repeat) {
         e.preventDefault()
         if (this._focusedTree) {
+          if (this.shinyCards.isExpanded()) return
           const { x, y } = this.butterflyCursor.getPosition()
-          if (this.shinyCards.isExpanded()) {
-            this.shinyCards.closeExpanded()
-            return
-          }
           if (this.shinyCards.selectAt(x, y)) return
           this._returnToOverview()
           return
         }
         const { x, y } = this.butterflyCursor.getPosition()
         this._handleClickAt(x, y)
+      }
+      if (e.code === 'Backspace' && !e.repeat) {
+        e.preventDefault()
+        this._goBack()
       }
     }
     this._onKeyUp = (e) => {

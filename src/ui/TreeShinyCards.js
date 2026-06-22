@@ -13,14 +13,14 @@ export class TreeShinyCards {
     this.container = container
     this.cfg = CONFIG.interaction.shinyCards ?? {}
     this.urls = this.cfg.urls ?? [
-      '/card/card1.jpg',
-      '/card/card2.jpg',
-      '/card/card3.jpg',
-      '/card/card4.jpg',
+      '/card/card01.jpg',
+      '/card/card02.jpg',
+      '/card/card03.jpg',
+      '/card/card04.jpg',
     ]
     this.dampen = this.cfg.dampen ?? 40
     this.cardWidth = this.cfg.width ?? 200
-    this.expandedWidth = this.cfg.expandedWidth ?? 440
+    this.expandedWidth = this.cfg.expandedWidth ?? 560
     this.titleUrl = this.cfg.titleUrl ?? '/title/menifesto.PNG'
     this.titleWidth = this.cfg.titleWidth ?? 300
 
@@ -119,8 +119,8 @@ export class TreeShinyCards {
         }
         #tree-shiny-cards .shiny-expanded-card {
           position: relative;
-          width: var(--expanded-w, 440px);
-          max-width: 88vw;
+          width: var(--expanded-w, 560px);
+          max-width: min(92vw, 560px);
           border-radius: 18px;
           overflow: hidden;
           transform-style: preserve-3d;
@@ -185,7 +185,13 @@ export class TreeShinyCards {
       card.appendChild(img)
       outer.appendChild(card)
       this.row.appendChild(outer)
-      outer.addEventListener('click', () => this.expand(i))
+      const stop = (e) => e.stopPropagation()
+      outer.addEventListener('pointerdown', stop)
+      outer.addEventListener('pointerup', stop)
+      outer.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.expand(i)
+      })
       this.cards.push({ outer, card, sheen, img, tweens: [] })
     }
   }
@@ -210,6 +216,10 @@ export class TreeShinyCards {
   _resetTilt(entry) {
     gsap.set(entry.card, { clearProps: 'transform' })
     entry.sheen.style.background = ''
+  }
+
+  isActive() {
+    return this.active
   }
 
   isExpanded() {
