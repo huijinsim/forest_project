@@ -69,6 +69,10 @@ export class PageOverlay {
     if (!silent) cb?.()
   }
 
+  get isOpen() {
+    return this.root.classList.contains('is-open')
+  }
+
   dispose() {
     this.close(true)
     this.root.remove()
