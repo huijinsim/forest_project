@@ -43,11 +43,11 @@ export const CONFIG = {
     vignette: 0.02,
   },
 
-  // 숲 초입길 시점 (길 입구 위쪽에서 안쪽을 내려다봄)
+  // 숲 전경 — 길 입구 위에서 안쪽을 내려다보는 고정 시점
   camera: {
     overview: {
-      position: [-7, 22, 92],
-      target: [2, 6, 30],
+      position: [-4, 20, 88],
+      target: [0, 5, 42],
       fov: 38,
     },
     close: {
@@ -278,13 +278,13 @@ export const CONFIG = {
 
     plantMaterial: {
       roughness: 0.9,
-      trunkRatio: 0.085,
+      trunkRatio: 0.1,
       trunkBlend: 0.02,
-      trunkRadiusRatio: 0.048,
+      trunkRadiusRatio: 0.052,
       trunkPalette: ['#88826d', '#b5ae9f', '#7d7458', '#92896e'],
     },
 
-    /** GLB 나무 3종 — 잎색만 종류별, 기둥은 공통 4색 팔레트 */
+    /** GLB 나무 3종 — 잎·기둥색 종류별 지정 */
     treeModels: [
       {
         id: 'cypress-asymmetric-a',
@@ -294,7 +294,10 @@ export const CONFIG = {
         minScale: 0.7,
         maxScale: 1.22,
         material: {
-          foliage: '#a1b15f',
+          foliage: '#b1ba5a',
+          trunk: '#88826d',
+          trunkRatio: 0.105,
+          trunkRadiusRatio: 0.055,
         },
       },
       {
@@ -306,6 +309,7 @@ export const CONFIG = {
         maxScale: 1.2,
         material: {
           foliage: '#8c9749',
+          trunk: '#b5ae9f',
         },
       },
       {
@@ -317,6 +321,7 @@ export const CONFIG = {
         maxScale: 1.2,
         material: {
           foliage: '#bfcb78',
+          trunk: '#7d7458',
         },
       },
     ],
@@ -334,7 +339,8 @@ export const CONFIG = {
       groundSink: -0.04,
       material: {
         splitMode: 'foliage',
-        foliage: '#aebb62',
+        randomFoliage: true,
+        foliagePalette: ['#848e4b', '#707830', '#8da94a', '#7a9936'],
       },
     },
     /** 길가·풀숲 튤립 */

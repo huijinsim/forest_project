@@ -254,6 +254,11 @@ export class Forest {
     }
   }
 
+  getTreePlacement(mesh, instanceId) {
+    const layer = this.treeLayers.find((l) => l.instancedMesh === mesh)
+    return layer?.placements[instanceId] ?? null
+  }
+
   getTreeFocusRoot(mesh, instanceId) {
     const layer = this.treeLayers.find((l) => l.instancedMesh === mesh)
     if (!layer) return null
@@ -363,7 +368,7 @@ export class Forest {
 
     if (!placements.length) return
 
-    const mesh = createTreeInstances(this.bushTemplate, placements)
+    const mesh = createTreeInstances(this.bushTemplate, placements, { pickable: null })
     this._track(mesh.material)
     this.scene.add(mesh)
   }

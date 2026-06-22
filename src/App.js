@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import gsap from 'gsap'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { CONFIG } from './config.js'
 import { Renderer } from './core/Renderer.js'
@@ -8,13 +9,15 @@ import { loadAllTreeTemplates, loadTreeTemplate } from './world/TreeModel.js'
 import { loadCloudTemplates } from './world/CloudModel.js'
 import { buildHillDiorama } from './world/Diorama.js'
 import { PageOverlay } from './ui/PageOverlay.js'
+import { FocusHint } from './ui/FocusHint.js'
+import { ButterflyCursor } from './ui/ButterflyCursor.js'
 import { loadFonts } from './ui/loadFonts.js'
 import { TimeSlider } from './ui/TimeSlider.js'
 import { DayCycle } from './systems/DayCycle.js'
 
 // ─────────────────────────────────────────────────────────────
 // App — 풀스크린 3D 숲 장소 (OrbitControls 자유 탐색)
-// 클릭 → 나무: About / 나비: Works
+// 나무 1클릭 → 줌 / 같은 나무 2클릭 → About
 // ─────────────────────────────────────────────────────────────
 export class App {
   constructor({ container, loaderEl }) {
@@ -30,6 +33,11 @@ export class App {
     this._down = { x: 0, y: 0, t: 0 }
 
     this.pageOverlay = new PageOverlay()
+    this.focusHint = new FocusHint()
+    this.butterflyCursor = new ButterflyCursor()
+    this._focusedTree = null
+    this._cameraTween = null
+    this._camAnim = { px: 0, py: 0, pz: 0, tx: 0, ty: 0, tz: 0 }
 
     this.renderer = new Renderer(container)
     this.postfx = new PostFX(this.renderer.instance, this.renderer.camera)
@@ -49,12 +57,9 @@ export class App {
   _initControls() {
     const cam = this.renderer.camera
     const ov = CONFIG.camera.overview
-    cam.position.set(...ov.position)
-    cam.fov = ov.fov
-    cam.updateProjectionMatrix()
 
     this.controls = new OrbitControls(cam, this.renderer.instance.domElement)
-    this.controls.target.set(...ov.target)
+    this._applyDefaultView(ov)
     this.controls.enableDamping = true
     this.controls.dampingFactor = 0.08
     this.controls.rotateSpeed = 0.6
@@ -64,7 +69,129 @@ export class App {
     this.controls.maxDistance = 160
     this.controls.maxPolarAngle = Math.PI * 0.46
     this.controls.enabled = false
+    this.controls.saveState()
+  }
+
+  /** config.camera.overview 시점 적용 */
+  _applyDefaultView(ov = CONFIG.camera.overview) {
+    const cam = this.renderer.camera
+    cam.position.set(...ov.position)
+    cam.fov = ov.fov
+    cam.updateProjectionMatrix()
+    this.controls.target.set(...ov.target)
     this.controls.update()
+  }
+
+  /** 새로고침·페이지 복귀 시 항상 같은 시점으로 */
+  resetCamera() {
+    if (!this.controls) return
+    this._killCameraTween()
+    this._focusedTree = null
+    this.focusHint?.hide()
+    this.controls.reset()
+    const ov = CONFIG.camera.overview
+    this.renderer.camera.fov = ov.fov
+    this.renderer.camera.updateProjectionMatrix()
+    this.controls.update()
+  }
+
+  _killCameraTween() {
+    this._cameraTween?.kill()
+    this._cameraTween = null
+  }
+
+  _isSameTreeFocus(mesh, instanceId) {
+    return (
+      this._focusedTree?.mesh === mesh &&
+      this._focusedTree?.instanceId === instanceId
+    )
+  }
+
+  _treeFocusTarget(placement) {
+    const y = placement.y ?? 0
+    return new THREE.Vector3(placement.x, y + placement.focusY * 0.42, placement.z)
+  }
+
+  _treeFocusPosition(target) {
+    const [ox, oy, oz] = CONFIG.interaction.treeCameraOffset
+    return new THREE.Vector3(target.x + ox, target.y + oy, target.z + oz)
+  }
+
+  _animateCamera(toPos, toTarget, duration, onComplete) {
+    const cam = this.renderer.camera
+    this._killCameraTween()
+
+    this._camAnim.px = cam.position.x
+    this._camAnim.py = cam.position.y
+    this._camAnim.pz = cam.position.z
+    this._camAnim.tx = this.controls.target.x
+    this._camAnim.ty = this.controls.target.y
+    this._camAnim.tz = this.controls.target.z
+
+    const wasEnabled = this.controls.enabled
+    this.controls.enabled = false
+
+    this._cameraTween = gsap.to(this._camAnim, {
+      px: toPos.x,
+      py: toPos.y,
+      pz: toPos.z,
+      tx: toTarget.x,
+      ty: toTarget.y,
+      tz: toTarget.z,
+      duration,
+      ease: 'power2.inOut',
+      onUpdate: () => {
+        cam.position.set(this._camAnim.px, this._camAnim.py, this._camAnim.pz)
+        this.controls.target.set(this._camAnim.tx, this._camAnim.ty, this._camAnim.tz)
+        this.controls.update()
+      },
+      onComplete: () => {
+        this._cameraTween = null
+        this.controls.enabled = wasEnabled
+        onComplete?.()
+      },
+    })
+  }
+
+  _focusTree(mesh, instanceId, placement) {
+    this._focusedTree = { mesh, instanceId }
+    this.focusHint.show()
+
+    const target = this._treeFocusTarget(placement)
+    const pos = this._treeFocusPosition(target)
+    this._animateCamera(pos, target, CONFIG.interaction.focusDuration)
+  }
+
+  _returnToOverview() {
+    if (!this._focusedTree) return
+
+    this._focusedTree = null
+    this.focusHint.hide()
+
+    const ov = CONFIG.camera.overview
+    const toPos = new THREE.Vector3(...ov.position)
+    const toTarget = new THREE.Vector3(...ov.target)
+    this._animateCamera(toPos, toTarget, CONFIG.interaction.returnDuration, () => {
+      this.controls.saveState()
+    })
+  }
+
+  _openTreeDetail() {
+    this.butterflyCursor.setEnabled(false)
+    this.pageOverlay.open('/about.html', () => {
+      this._focusedTree = null
+      this.focusHint.hide()
+      this.resetCamera()
+      this.butterflyCursor.setEnabled(true)
+    })
+  }
+
+  _openWorksDetail() {
+    this.butterflyCursor.setEnabled(false)
+    this.pageOverlay.open('/works.html', () => {
+      this.resetCamera()
+      this.butterflyCursor.setEnabled(true)
+    })
   }
 
   bootstrap() {
@@ -135,9 +262,10 @@ export class App {
       this.timeSlider.setValue(this.dayCycle.t, false)
       this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
       this.timeSlider.show(this.dayCycle.t)
+      this.resetCamera()
       this.mainActive = true
       this.controls.enabled = true
-      this.container.style.cursor = 'grab'
+      this.butterflyCursor.setEnabled(true)
     } catch (err) {
       console.error('[forest] 숲 로드 실패:', err)
       if (pctEl) pctEl.textContent = '로드 실패'
@@ -177,15 +305,35 @@ export class App {
     )
     this._raycaster.setFromCamera(this._ndc, this.renderer.camera)
     const hits = this._raycaster.intersectObjects(this.forest.getPickables(), false)
-    if (!hits.length) return
 
-    const obj = hits[0].object
-    const type = obj.userData.interactive
-    if (type === 'tree' || obj.userData.isInstancedTrees) {
-      this.pageOverlay.open('/about.html')
-    } else if (type === 'butterfly') {
-      this.pageOverlay.open('/works.html')
+    if (!hits.length) {
+      if (this._focusedTree) this._returnToOverview()
+      return
     }
+
+    const hit = hits[0]
+    const obj = hit.object
+    const type = obj.userData.interactive
+
+    if (type === 'tree' || obj.userData.isInstancedTrees) {
+      const instanceId = hit.instanceId
+      const placement = this.forest.getTreePlacement(obj, instanceId)
+      if (!placement) return
+
+      if (this._isSameTreeFocus(obj, instanceId)) {
+        this._openTreeDetail()
+      } else {
+        this._focusTree(obj, instanceId, placement)
+      }
+      return
+    }
+
+    if (type === 'butterfly') {
+      this._openWorksDetail()
+      return
+    }
+
+    if (this._focusedTree) this._returnToOverview()
   }
 
   resize() {
@@ -219,6 +367,8 @@ export class App {
     this._resizeObserver?.disconnect()
     this.controls?.dispose()
     this.pageOverlay?.dispose()
+    this.focusHint?.dispose()
+    this.butterflyCursor?.dispose()
     this.timeSlider?.dispose()
     this.forest?.dispose()
     this.dayCycle?.dispose()

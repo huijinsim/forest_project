@@ -60,9 +60,9 @@ function estimateTrunkRadius(pos, minY, span, trunkRadiusRatio) {
   if (!radii.length) return span * trunkRadiusRatio
 
   radii.sort((a, b) => a - b)
-  const idx = Math.min(radii.length - 1, Math.floor(radii.length * 0.88))
+  const idx = Math.min(radii.length - 1, Math.floor(radii.length * 0.95))
   const cap = span * trunkRadiusRatio
-  return THREE.MathUtils.clamp(radii[idx] * 1.05, span * 0.018, cap)
+  return THREE.MathUtils.clamp(radii[idx] * 1.1, span * 0.02, cap)
 }
 
 /** splitMode: tree | stem | foliage(전부 잎) */
@@ -81,7 +81,8 @@ function bakePlantPartMask(geometry, { trunkRatio, trunkRadiusRatio, splitMode }
     return { trunkTop: minY, trunkR: 0 }
   }
 
-  const trunkTop = minY + span * (splitMode === 'stem' ? trunkRatio : Math.min(trunkRatio, 0.085))
+  const trunkTop =
+    minY + span * (splitMode === 'stem' ? trunkRatio : Math.min(trunkRatio, 0.1))
   const trunkR =
     splitMode === 'tree' ? estimateTrunkRadius(pos, minY, span, trunkRadiusRatio) : 0
 
@@ -99,6 +100,19 @@ function bakePlantPartMask(geometry, { trunkRatio, trunkRadiusRatio, splitMode }
   return { trunkTop, trunkR }
 }
 
+/** 정점 컬러로 기둥/잎색 고정 — InstancedMesh에서도 확실히 보임 */
+function bakeVertexColors(geometry, foliageColor, trunkColor) {
+  const part = geometry.attributes.aPlantPart.array
+  const colors = new Float32Array(part.length * 3)
+  for (let i = 0; i < part.length; i++) {
+    const c = part[i] > 0.5 ? foliageColor : trunkColor
+    colors[i * 3] = c.r
+    colors[i * 3 + 1] = c.g
+    colors[i * 3 + 2] = c.b
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+}
+
 /**
  * @param {string} url
  * @param {object} [options]
@@ -111,9 +125,12 @@ export function loadTreeTemplate(url, options = {}, onProgress) {
   const materialCfg = { ...baseMat, ...options.material }
 
   const foliageColor = new THREE.Color(materialCfg.foliage ?? '#a1b15f')
+  const trunkColor = new THREE.Color(
+    materialCfg.trunk ?? materialCfg.trunkPalette?.[0] ?? CONFIG.forest.trunkPalette?.[0] ?? '#88826d',
+  )
   const trunkPalette = paletteColors(
     materialCfg.trunkPalette ?? CONFIG.forest.trunkPalette,
-    materialCfg.trunk ?? '#88826d',
+    trunkColor.getStyle(),
   )
 
   return new Promise((resolve, reject) => {
@@ -137,8 +154,8 @@ export function loadTreeTemplate(url, options = {}, onProgress) {
             geometry.boundingBox.max.z - geometry.boundingBox.min.z,
           ) * 0.5
 
-        const trunkRatio = materialCfg.trunkRatio ?? 0.085
-        const trunkRadiusRatio = materialCfg.trunkRadiusRatio ?? 0.048
+        const trunkRatio = materialCfg.trunkRatio ?? 0.1
+        const trunkRadiusRatio = materialCfg.trunkRadiusRatio ?? 0.052
         const splitMode = materialCfg.splitMode ?? 'tree'
         bakePlantPartMask(geometry, {
           trunkRatio,
@@ -146,49 +163,49 @@ export function loadTreeTemplate(url, options = {}, onProgress) {
           splitMode,
         })
 
+        const foliagePalette = materialCfg.foliagePalette?.length
+          ? paletteColors(materialCfg.foliagePalette, foliageColor.getStyle())
+          : null
+        const randomFoliage = !!(materialCfg.randomFoliage && foliagePalette?.length)
+        bakeVertexColors(
+          geometry,
+          randomFoliage ? new THREE.Color(1, 1, 1) : foliageColor,
+          trunkColor,
+        )
+
         const material = new THREE.MeshStandardMaterial({
           color: 0xffffff,
           roughness: materialCfg.roughness ?? 0.9,
           metalness: 0.0,
           flatShading: false,
+          vertexColors: true,
         })
 
         material.onBeforeCompile = (shader) => {
-          shader.uniforms.uFoliageColor = { value: foliageColor }
-
           shader.vertexShader = shader.vertexShader
             .replace(
               '#include <common>',
-              '#include <common>\nvarying float vPlantPart;\nvarying vec3 vTrunk;\nattribute float aPlantPart;\nattribute vec3 aTrunk;',
+              '#include <common>\nvarying float vPlantPart;\nattribute float aPlantPart;',
             )
             .replace(
               '#include <begin_vertex>',
-              '#include <begin_vertex>\n  vPlantPart = aPlantPart;\n  vTrunk = aTrunk;',
+              '#include <begin_vertex>\n  vPlantPart = aPlantPart;',
             )
 
           shader.fragmentShader = shader.fragmentShader
             .replace(
               '#include <common>',
-              `#include <common>
-varying float vPlantPart;
-varying vec3 vTrunk;
-uniform vec3 uFoliageColor;`,
-            )
-            .replace(
-              'vec4 diffuseColor = vec4( diffuse, opacity );',
-              `float folMix = vPlantPart;
-  vec3 trunkCol = vTrunk;
-  vec3 baseCol = mix(trunkCol, uFoliageColor, folMix);
-  vec4 diffuseColor = vec4(baseCol, opacity);`,
+              '#include <common>\nvarying float vPlantPart;',
             )
             .replace(
               '#include <emissivemap_fragment>',
               `#include <emissivemap_fragment>
-  totalEmissiveRadiance += vTrunk * (1.0 - vPlantPart) * 0.82;`,
+  float trunkW = 1.0 - vPlantPart;
+  totalEmissiveRadiance += diffuseColor.rgb * trunkW * 0.92;`,
             )
         }
         material.customProgramCacheKey = () =>
-          `plant-v7-${splitMode}-${materialCfg.foliage}`
+          `plant-v9-${splitMode}-${materialCfg.foliage}-${trunkColor.getHexString()}-${randomFoliage ? 'rand' : 'fix'}`
 
         resolve({
           geometry,
@@ -197,6 +214,9 @@ uniform vec3 uFoliageColor;`,
           radius,
           id: options.id ?? url,
           trunkPalette,
+          trunkColor,
+          foliagePalette,
+          randomFoliage,
         })
       },
       (ev) => {
@@ -220,8 +240,9 @@ export async function loadAllTreeTemplates(models, onProgress) {
   return templates
 }
 
-/** InstancedMesh — 인스턴스마다 기둥 팔레트 색 */
-export function createTreeInstances(template, placements) {
+/** InstancedMesh — 나무는 템플릿 기둥색, 덩굴 등은 foliagePalette 랜덤 */
+export function createTreeInstances(template, placements, options = {}) {
+  const pickable = options.pickable ?? 'tree'
   const mesh = new THREE.InstancedMesh(template.geometry, template.material, placements.length)
   mesh.castShadow = true
   mesh.receiveShadow = true
@@ -230,12 +251,6 @@ export function createTreeInstances(template, placements) {
   const q = new THREE.Quaternion()
   const p = new THREE.Vector3()
   const s = new THREE.Vector3()
-
-  const trunks = new Float32Array(placements.length * 3)
-  const palette = template.trunkPalette?.length
-    ? template.trunkPalette
-    : [new THREE.Color('#88826d')]
-  const _c = new THREE.Color()
 
   const rand = (seed) => {
     const x = Math.sin(seed * 12.9898) * 43758.5453
@@ -249,21 +264,27 @@ export function createTreeInstances(template, placements) {
     p.set(t.x, t.y ?? 0, t.z)
     m.compose(p, q, s)
     mesh.setMatrixAt(i, m)
-
-    const seed = (t.seed ?? i) + (template.id?.length ?? 0) * 0.17
-    const idx = Math.floor(rand(seed + 19.4) * palette.length) % palette.length
-    _c.copy(palette[idx])
-    trunks[i * 3] = _c.r
-    trunks[i * 3 + 1] = _c.g
-    trunks[i * 3 + 2] = _c.b
   }
 
-  mesh.geometry.setAttribute('aTrunk', new THREE.InstancedBufferAttribute(trunks, 3))
+  if (template.randomFoliage && template.foliagePalette?.length) {
+    const palette = template.foliagePalette
+    const colors = new Float32Array(placements.length * 3)
+    for (let i = 0; i < placements.length; i++) {
+      const seed = (placements[i].seed ?? i) + (template.id?.length ?? 0) * 0.31
+      const idx = Math.floor(rand(seed + 7.3) * palette.length) % palette.length
+      const c = palette[idx]
+      colors[i * 3] = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3)
+  }
+
   mesh.instanceMatrix.needsUpdate = true
   mesh.computeBoundingSphere()
   mesh.frustumCulled = false
-  mesh.userData.interactive = 'tree'
-  mesh.userData.isInstancedTrees = true
+  mesh.userData.interactive = pickable
+  mesh.userData.isInstancedTrees = pickable === 'tree'
   return mesh
 }
 
