@@ -37,14 +37,16 @@ export class TreeShinyCards {
           justify-content: center;
           perspective: 1200px;
         }
-        #tree-shiny-cards.is-active { display: flex; }
+        #tree-shiny-cards.is-active { display: flex; overflow-y: auto; }
         #tree-shiny-cards.is-expanded .shiny-cards-stack { opacity: 0; pointer-events: none; }
         #tree-shiny-cards .shiny-cards-stack {
           display: flex;
           flex-direction: column;
           align-items: center;
           gap: clamp(14px, 2.5vh, 28px);
+          padding: clamp(36px, 7vh, 56px) 0 clamp(28px, 5vh, 40px);
           transition: opacity 0.35s ease;
+          box-sizing: border-box;
         }
         #tree-shiny-cards .shiny-title {
           display: block;
@@ -60,7 +62,7 @@ export class TreeShinyCards {
           align-items: center;
           justify-content: center;
           gap: clamp(10px, 1.8vw, 24px);
-          padding: 0 20px 128px;
+          padding: 0 20px 12px;
           max-width: min(980px, 96vw);
         }
         #tree-shiny-cards.is-active .shiny-card-outer {
@@ -101,7 +103,9 @@ export class TreeShinyCards {
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 24px 20px 128px;
+          padding: clamp(40px, 7vh, 64px) 20px clamp(32px, 5vh, 48px);
+          box-sizing: border-box;
+          overflow-y: auto;
           opacity: 0;
           visibility: hidden;
           pointer-events: none;
@@ -116,11 +120,13 @@ export class TreeShinyCards {
         }
         #tree-shiny-cards .shiny-expanded-outer {
           perspective: 1000px;
+          max-height: 100%;
+          flex-shrink: 0;
         }
         #tree-shiny-cards .shiny-expanded-card {
           position: relative;
-          width: var(--expanded-w, 560px);
-          max-width: min(92vw, 560px);
+          width: min(var(--expanded-w, 560px), 92vw);
+          max-height: min(calc(100dvh - 88px), 780px);
           border-radius: 18px;
           overflow: hidden;
           transform-style: preserve-3d;
@@ -132,6 +138,8 @@ export class TreeShinyCards {
           display: block;
           width: 100%;
           height: auto;
+          max-height: min(calc(100dvh - 88px), 780px);
+          object-fit: contain;
         }
       </style>
       <div class="shiny-cards-stack">
@@ -167,6 +175,7 @@ export class TreeShinyCards {
     this.expanded = false
     this._expandedIndex = -1
     this._pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+    this.onActiveChange = null
 
     for (let i = 0; i < this.urls.length; i++) {
       const outer = document.createElement('div')
@@ -196,10 +205,12 @@ export class TreeShinyCards {
     }
   }
 
-  _applyTilt(el, sheen, clientX, clientY) {
+  _applyTilt(el, sheen, clientX, clientY, maxTilt = 14) {
     const rect = el.getBoundingClientRect()
-    const rotateX = -((clientY - rect.top - rect.height / 2) / this.dampen)
-    const rotateY = (clientX - rect.left - rect.width / 2) / this.dampen
+    let rotateX = -((clientY - rect.top - rect.height / 2) / this.dampen)
+    let rotateY = (clientX - rect.left - rect.width / 2) / this.dampen
+    rotateX = clamp(rotateX, -maxTilt, maxTilt)
+    rotateY = clamp(rotateY, -maxTilt, maxTilt)
     el.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`
 
     const diagonal = rotateX + rotateY
@@ -317,6 +328,7 @@ export class TreeShinyCards {
     }
 
     this.updatePointer(this._pointer.x, this._pointer.y)
+    this.onActiveChange?.(true)
   }
 
   updatePointer(clientX, clientY) {
@@ -325,7 +337,7 @@ export class TreeShinyCards {
     this._pointer.y = clientY
 
     if (this.expanded) {
-      this._applyTilt(this.expandedCard, this.expandedSheen, clientX, clientY)
+      this._applyTilt(this.expandedCard, this.expandedSheen, clientX, clientY, 8)
       return
     }
 
@@ -335,13 +347,15 @@ export class TreeShinyCards {
   clear(animate = true) {
     if (!this.active && !this.expanded && !animate) return
 
+    const wasActive = this.active
+
     this.expanded = false
     this._expandedIndex = -1
     this.root.classList.remove('is-expanded')
     gsap.set(this.expandedCard, { clearProps: 'transform,opacity' })
     this.expandedSheen.style.background = ''
 
-    if (!this.active && !animate) return
+    if (!wasActive && !animate) return
 
     this.active = false
 
@@ -351,10 +365,15 @@ export class TreeShinyCards {
       entry.tweens = []
     }
 
-    if (!animate) {
+    const finish = () => {
       this.root.classList.remove('is-active')
       gsap.set(this.titleEl, { clearProps: 'transform,opacity' })
       for (const entry of list) this._resetTilt(entry)
+      if (wasActive) this.onActiveChange?.(false)
+    }
+
+    if (!animate) {
+      finish()
       return
     }
 
@@ -368,11 +387,7 @@ export class TreeShinyCards {
         duration: 0.32,
         stagger: 0.04,
         ease: 'power2.in',
-        onComplete: () => {
-          this.root.classList.remove('is-active')
-          gsap.set(this.titleEl, { clearProps: 'transform,opacity' })
-          for (const entry of list) this._resetTilt(entry)
-        },
+        onComplete: finish,
       },
     )
   }

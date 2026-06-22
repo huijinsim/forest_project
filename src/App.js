@@ -53,6 +53,10 @@ export class App {
       this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
       this.dayCycle.apply(this.forest, this.renderer.camera)
     })
+    this.shinyCards.onActiveChange = (active) => {
+      if (active) this.timeSlider.hide()
+      else if (this.mainActive) this.timeSlider.show(this.dayCycle.t)
+    }
 
     this._initControls()
     this._bindEvents()
