@@ -98,6 +98,21 @@ export const CONFIG = {
       ],
       size: 150,
     },
+    shinyCards: {
+      urls: [
+        '/card/card1.jpg',
+        '/card/card2.jpg',
+        '/card/card3.jpg',
+        '/card/card4.jpg',
+      ],
+      titleUrl: '/title/menifesto.PNG',
+      titleWidth: 300,
+      width: 200,
+      expandedWidth: 440,
+      dampen: 40,
+      stagger: 0.12,
+      enterDuration: 0.72,
+    },
     flowerStickers: {
       urls: [
         '/flower/flower_14.PNG',

@@ -10,7 +10,7 @@ import { loadCloudTemplates } from './world/CloudModel.js'
 import { buildHillDiorama } from './world/Diorama.js'
 import { PageOverlay } from './ui/PageOverlay.js'
 import { ButterflyCursor } from './ui/ButterflyCursor.js'
-import { TreeFlowerStickers } from './ui/TreeFlowerStickers.js'
+import { TreeShinyCards } from './ui/TreeShinyCards.js'
 import { loadFonts } from './ui/loadFonts.js'
 import { TimeSlider } from './ui/TimeSlider.js'
 import { DayCycle } from './systems/DayCycle.js'
@@ -18,7 +18,7 @@ import { DayCycle } from './systems/DayCycle.js'
 const ARROW_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']
 
 // ─────────────────────────────────────────────────────────────
-// App — 3D 숲 (방향키 이동 · 나무 클릭 → 꽃)
+// App — 3D 숲 (방향키 이동 · 나무 클릭 → 3D 카드)
 // ─────────────────────────────────────────────────────────────
 export class App {
   constructor({ container, loaderEl }) {
@@ -40,7 +40,7 @@ export class App {
     this.pageOverlay = new PageOverlay()
     const bc = CONFIG.interaction.butterflyCursor ?? {}
     this.butterflyCursor = new ButterflyCursor(bc.urls, { size: bc.size ?? 150 })
-    this.flowerStickers = new TreeFlowerStickers(container)
+    this.shinyCards = new TreeShinyCards(container)
     this._focusedTree = null
     this._cameraTween = null
     this._camAnim = { px: 0, py: 0, pz: 0, tx: 0, ty: 0, tz: 0 }
@@ -93,7 +93,7 @@ export class App {
     if (!this.controls) return
     this._killCameraTween()
     this._focusedTree = null
-    this.flowerStickers?.clear(false)
+    this.shinyCards?.clear(false)
     this.controls.reset()
     const ov = CONFIG.camera.overview
     this.renderer.camera.fov = ov.fov
@@ -192,7 +192,7 @@ export class App {
 
     const target = this._treeFocusTarget(placement)
     const pos = this._treeFocusPosition(target)
-    this.flowerStickers.burst(placement, this.renderer.camera)
+    this.shinyCards.show()
     this._animateCamera(pos, target, CONFIG.interaction.focusDuration)
   }
 
@@ -200,7 +200,7 @@ export class App {
     if (!this._focusedTree) return
 
     this._focusedTree = null
-    this.flowerStickers.clear()
+    this.shinyCards.clear()
 
     const ov = CONFIG.camera.overview
     const toPos = new THREE.Vector3(...ov.position)
@@ -329,6 +329,12 @@ export class App {
       if (e.code === 'Enter' && !e.repeat) {
         e.preventDefault()
         if (this._focusedTree) {
+          const { x, y } = this.butterflyCursor.getPosition()
+          if (this.shinyCards.isExpanded()) {
+            this.shinyCards.closeExpanded()
+            return
+          }
+          if (this.shinyCards.selectAt(x, y)) return
           this._returnToOverview()
           return
         }
@@ -411,7 +417,8 @@ export class App {
     if (this.forest) {
       this.dayCycle.apply(this.forest, cam)
       this.forest.update(elapsed)
-      this.flowerStickers?.update(cam)
+      const pos = this.butterflyCursor.getPosition()
+      this.shinyCards?.updatePointer(pos.x, pos.y)
       this.postfx.render(this.forest.scene, cam, elapsed)
     } else {
       this.renderer.render(new THREE.Scene(), cam)
@@ -430,7 +437,7 @@ export class App {
     this.controls?.dispose()
     this.pageOverlay?.dispose()
     this.butterflyCursor?.dispose()
-    this.flowerStickers?.dispose()
+    this.shinyCards?.dispose()
     this.timeSlider?.dispose()
     this.forest?.dispose()
     this.dayCycle?.dispose()
