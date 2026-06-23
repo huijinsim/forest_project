@@ -10,7 +10,9 @@ export const CONFIG = {
   },
 
   dayCycle: {
-    default: 0.38,
+    default: 0,
+    /** 아침(0) → 밤(1) 자동 진행 주기(초) */
+    autoDuration: 120,
   },
 
   // Summer Afternoon 무드 — 따뜻한 오후 빛 + 부드러운 발광
@@ -36,16 +38,16 @@ export const CONFIG = {
     paperScale: 2.8,
     wash: 0.02,
     washColor: '#d8f0fc',
-    saturation: 1.12,
+    saturation: 0.88,
     lift: 0.014,
     shadowTint: '#3a6848',
     highlightTint: '#f8fcff',
     vignette: 0.02,
   },
 
-  // 숲 전경 — 길 입구 위에서 안쪽을 내려다보는 고정 시점
+  // 숲 전경 — home(기본·최대 후退) · close(최대 줌인)
   camera: {
-    overview: {
+    home: {
       position: [-4, 20, 88],
       target: [0, 5, 42],
       fov: 38,
@@ -56,18 +58,21 @@ export const CONFIG = {
       fov: 34,
     },
     zoom: {
-      value: 0.78,
-      default: 0.78,
-      speed: 0.0022,
+      value: 0,
+      default: 0,
+      min: 0,
+      max: 1,
+      speed: 0.0018,
+      keySpeed: 0.85,
       damping: 0.12,
     },
     pan: {
       value: 0,
       default: 0,
-      min: -62,
-      max: 62,
+      min: -28,
+      max: 28,
       wheelSpeed: 0.035,
-      keySpeed: 24,
+      keySpeed: 22,
       damping: 0.1,
     },
     keyboard: {
@@ -109,6 +114,7 @@ export const CONFIG = {
       titleWidth: 300,
       width: 200,
       expandedWidth: 560,
+      backUrl: '/card/postcard.jpg',
       dampen: 40,
       stagger: 0.12,
       enterDuration: 0.72,

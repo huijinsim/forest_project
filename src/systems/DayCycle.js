@@ -3,7 +3,7 @@ import { CONFIG } from '../config.js'
 import { SkyBackground } from './SkyBackground.js'
 
 // ─────────────────────────────────────────────────────────────
-// DayCycle — 슬라이더 색 → 배경 + 숲 조명·무드
+// DayCycle — 슬라이더 색 → 배경 + 숲 조명·그림자·포스트 무드
 // ─────────────────────────────────────────────────────────────
 
 const _a = new THREE.Color()
@@ -36,78 +36,103 @@ function sampleNumberTrack(keyframes, t, field) {
   return THREE.MathUtils.lerp(left[field], right[field], local)
 }
 
-/** 배경 하늘 — 미피 스타일 선명한 블루 */
-function pastelizeSkyHex(hex) {
+/** 배경 하늘 — 은은한 파스텔, 시간대별로 살짝만 변화 */
+function pastelizeSkyHex(hex, t) {
   _a.set(hex.startsWith('#') ? hex : `#${hex}`)
   const hsl = { h: 0, s: 0, l: 0 }
   _a.getHSL(hsl)
-  // 하늘 블루는 채도 유지
-  if (hsl.h > 0.48 && hsl.h < 0.68) {
-    hsl.s = Math.min(hsl.s * 1.08, 0.78)
-    hsl.l = THREE.MathUtils.clamp(hsl.l, 0.58, 0.84)
+  const nightT = THREE.MathUtils.smoothstep(0.55, 1, t)
+
+  if (nightT > 0.35) {
+    hsl.s = Math.min(hsl.s * 0.78, 0.38)
+    hsl.l = THREE.MathUtils.clamp(hsl.l, 0.14, 0.36)
     return _a.setHSL(hsl.h, hsl.s, hsl.l).getHexString()
   }
-  hsl.s = Math.min(hsl.s * 0.88, 0.55)
-  hsl.l = THREE.MathUtils.clamp(hsl.l * 0.98 + 0.02, 0.5, 0.9)
+
+  if (hsl.h > 0.48 && hsl.h < 0.68) {
+    hsl.s = Math.min(hsl.s * 1.02, 0.68)
+    hsl.l = THREE.MathUtils.clamp(hsl.l, 0.56, 0.8)
+    return _a.setHSL(hsl.h, hsl.s, hsl.l).getHexString()
+  }
+
+  hsl.s = Math.min(hsl.s * 0.8, 0.46)
+  hsl.l = THREE.MathUtils.clamp(hsl.l * 0.98 + 0.02, 0.5, 0.86)
   return _a.setHSL(hsl.h, hsl.s, hsl.l).getHexString()
 }
 
 const SKY_TRACK = [
   { t: 0.0, top: '#72c8f4', bottom: '#89d8fa', horizon: '#a0e4fc', sunset: '#68c0ec' },
-  { t: 0.25, top: '#68c4f2', bottom: '#84d4f8', horizon: '#9ce0fc', sunset: '#60b8e8' },
-  { t: 0.5, top: '#5eb8ec', bottom: '#78ccf4', horizon: '#90daf8', sunset: '#58b0e4' },
-  { t: 0.75, top: '#88b8d8', bottom: '#a0c8e0', horizon: '#b0d0e8', sunset: '#98b8d0' },
+  { t: 0.25, top: '#74c8f2', bottom: '#98d8f8', horizon: '#b8e8fc', sunset: '#78c4ea' },
+  { t: 0.5, top: '#6ec4f0', bottom: '#a4dcf6', horizon: '#c8ecfa', sunset: '#70c0e8' },
+  { t: 0.75, top: '#a8b0c8', bottom: '#c8b8b0', horizon: '#dcc8c0', sunset: '#c0a8a0' },
   { t: 1.0, top: '#3d4540', bottom: '#4a5048', horizon: '#5a6058', sunset: '#484e48' },
 ]
 
 const LIGHT_TRACK = [
-  { t: 0.0, color: '#fffef8', ambient: 0.92 },
-  { t: 0.25, color: '#ffffff', ambient: 0.96 },
-  { t: 0.5, color: '#fffef8', ambient: 0.94 },
-  { t: 0.75, color: '#f0f0e8', ambient: 0.88 },
-  { t: 1.0, color: '#7888a0', ambient: 0.56 },
+  { t: 0.0, color: '#e8f4ff', ambient: 0.62, sun: 0.78 },
+  { t: 0.25, color: '#fff8e8', ambient: 1.02, sun: 1.42 },
+  { t: 0.5, color: '#ffffff', ambient: 1.1, sun: 1.52 },
+  { t: 0.75, color: '#ffe8d8', ambient: 0.72, sun: 1.02 },
+  { t: 1.0, color: '#7888a0', ambient: 0.22, sun: 0.18 },
 ]
 
 /** 하늘 색 → 숲 조명·그림자·포스트 무드 */
 function computeForestMood(sky, celestial, t) {
-  const nightT = THREE.MathUtils.smoothstep(0.58, 1, t)
+  const nightT = THREE.MathUtils.smoothstep(0.52, 1, t)
   const dayT = 1 - nightT
   const sunArc = Math.sin(t * Math.PI)
+  const golden =
+    Math.exp(-Math.pow((t - 0.28) / 0.11, 2)) * 0.85 +
+    Math.exp(-Math.pow((t - 0.72) / 0.1, 2)) * 0.75
 
+  const trackLight = sampleTrack(LIGHT_TRACK, t, ['color']).color
   const sunMix = celestial.isMoon
-    ? 0.18
-    : THREE.MathUtils.clamp(0.3 + sunArc * 0.5, 0.22, 0.82)
-  const lightColor = `#${lerpHex(sky.horizon, sky.sunset, sunMix)}`
-  const ambientColor = `#${lerpHex(sky.horizon, sky.bottom, 0.52)}`
-  const bounceColor = `#${lerpHex(sky.bottom, '#6ea14a', 0.28)}`
+    ? 0.16
+    : THREE.MathUtils.clamp(0.28 + sunArc * 0.52 + golden * 0.16, 0.22, 0.78)
+  const lightColor = `#${lerpHex(trackLight, lerpHex(sky.horizon, sky.sunset, sunMix), 0.34)}`
+  const ambientColor = `#${lerpHex(sky.horizon, sky.bottom, 0.44 + nightT * 0.16)}`
+  const bounceColor = `#${lerpHex(
+    lerpHex('#6ea14a', sky.bottom, 0.22),
+    '#283018',
+    nightT * 0.62,
+  )}`
 
   const ambient = sampleNumberTrack(LIGHT_TRACK, t, 'ambient')
-  const bounceStrength = THREE.MathUtils.lerp(0.14, 0.05, nightT)
-  const highlight = THREE.MathUtils.lerp(0.15, 0.05, nightT)
+  const sunIntensity = sampleNumberTrack(LIGHT_TRACK, t, 'sun')
 
-  const outlineColor = `#${lerpHex(lerpHex('#484840', sky.horizon, 0.08), '#2a3040', nightT * 0.58)}`
-  const moodColor = `#${lerpHex(lerpHex(sky.horizon, sky.sunset, 0.38), '#b0b8a0', 0.18)}`
-  const moodStrength = THREE.MathUtils.lerp(0.26, 0.42, sunArc) * dayT + 0.44 * nightT
-  const groundMoodStrength = THREE.MathUtils.lerp(0.34, 0.52, sunArc) * dayT + 0.48 * nightT
+  const shadowTint = `#${lerpHex(
+    lerpHex('#3a5848', sky.sunset, 0.14 + golden * 0.14),
+    '#2a3040',
+    nightT * 0.72,
+  )}`
+  const highlightTint = `#${lerpHex(
+    lerpHex('#f8fcff', sky.horizon, 0.18 + golden * 0.14),
+    '#b8c8d8',
+    nightT * 0.5,
+  )}`
+  const washColor = `#${lerpHex(sky.horizon, sky.top, 0.36 + golden * 0.08)}`
 
   return {
     lightColor,
     ambientColor,
     bounceColor,
     ambient,
-    skyFill: THREE.MathUtils.lerp(0.3, 0.46, sunArc) * dayT + 0.34 * nightT,
-    lightMix: THREE.MathUtils.lerp(0.12, 0.26, sunArc) * dayT + 0.1 * nightT,
-    bounceStrength,
-    highlight,
-    outlineColor,
-    moodColor,
-    moodStrength,
-    groundMoodStrength,
-    warmColor: `#${lerpHex(sky.sunset, sky.horizon, 0.28)}`,
-    warmTint: THREE.MathUtils.lerp(0.008, 0.032, sunArc * dayT),
-    saturation: THREE.MathUtils.lerp(0.68, 0.82, dayT),
-    haze: THREE.MathUtils.lerp(0.014, 0.005, dayT),
-    lift: THREE.MathUtils.lerp(0.012, 0.026, dayT),
+    sunIntensity,
+    nightT,
+    dayT,
+    golden,
+    shadowTint,
+    highlightTint,
+    washColor,
+    saturation: THREE.MathUtils.lerp(0.7, 0.88, dayT) + golden * 0.06,
+    lift: THREE.MathUtils.lerp(0.012, 0.026, dayT) + golden * 0.01,
+    wash: THREE.MathUtils.lerp(0.026, 0.01, dayT) + golden * 0.014,
+    vignette: THREE.MathUtils.lerp(0.016, 0.11, nightT),
+    inkStrength: THREE.MathUtils.lerp(CONFIG.painterly.inkStrength * 0.78, CONFIG.painterly.inkStrength * 1.22, nightT),
+    aoScale: THREE.MathUtils.lerp(CONFIG.quality.aoScale * 1.42, CONFIG.quality.aoScale * 0.64, dayT),
+    bloomStrength: THREE.MathUtils.lerp(0.032, CONFIG.quality.bloomStrength, dayT) + golden * 0.07,
+    bloomThreshold: THREE.MathUtils.lerp(0.72, CONFIG.quality.bloomThreshold, dayT),
+    exposure: THREE.MathUtils.lerp(0.84, 1.1, dayT) + golden * 0.06,
   }
 }
 
@@ -124,7 +149,7 @@ export class DayCycle {
     const raw = sampleTrack(SKY_TRACK, t, ['top', 'bottom', 'horizon', 'sunset'])
     const sky = {}
     for (const key of Object.keys(raw)) {
-      sky[key] = pastelizeSkyHex(raw[key])
+      sky[key] = pastelizeSkyHex(raw[key], t)
     }
 
     const celestialX = THREE.MathUtils.lerp(-0.92, 0.92, t)
@@ -164,7 +189,7 @@ export class DayCycle {
     this.renderer = renderer
   }
 
-  apply(forest, camera = null) {
+  apply(forest, camera = null, postfx = null) {
     const a = this._atmosphere
     const m = a.mood
 
@@ -172,42 +197,43 @@ export class DayCycle {
 
     if (this.renderer) {
       this.renderer.setClearColor(_a.set(`#${a.sky.bottom}`), 1)
+      this.renderer.toneMappingExposure = m.exposure
     }
-
-    const nightT = THREE.MathUtils.smoothstep(0.58, 1, a.t)
-    const dayT = 1 - nightT
 
     if (forest?.scene) {
       forest.scene.background = this.skyBackground.texture
       if (!forest.scene.fog) forest.scene.fog = new THREE.Fog('#a0e4fc', 320, 1200)
       forest.scene.fog.color.set(`#${a.sky.horizon}`)
-      forest.scene.fog.near = THREE.MathUtils.lerp(300, 100, nightT)
-      forest.scene.fog.far = THREE.MathUtils.lerp(1300, 480, nightT)
+      forest.scene.fog.near = THREE.MathUtils.lerp(300, 58, m.nightT)
+      forest.scene.fog.far = THREE.MathUtils.lerp(1420, 360, m.nightT)
     }
 
     if (forest?.sun) {
-      forest.sun.color.set('#ffffff')
-      forest.sun.intensity = THREE.MathUtils.lerp(0.3, 1.05, dayT)
+      forest.sun.color.set(m.lightColor)
+      forest.sun.intensity = m.sunIntensity
       const dist = 170
       forest.sun.position.set(
         a.celestial.x * dist,
-        Math.max(18, (a.celestial.y + 0.12) * dist),
+        Math.max(14, (a.celestial.y + 0.1) * dist),
         70,
       )
       forest.sun.target.position.set(0, 0, -30)
       forest.sun.target.updateMatrixWorld()
+      forest.sun.shadow.radius = THREE.MathUtils.lerp(3.8, 9.0, m.dayT)
     }
 
     if (forest?.hemi) {
       forest.hemi.color.set(`#${a.sky.top}`)
-      forest.hemi.groundColor.set('#6ea14a')
-      forest.hemi.intensity = THREE.MathUtils.lerp(0.65, 1.0, dayT)
+      forest.hemi.groundColor.set(m.bounceColor)
+      forest.hemi.intensity = THREE.MathUtils.lerp(0.52, 1.02, m.dayT) + m.golden * 0.1
     }
 
     if (forest?.ambient) {
-      forest.ambient.color.set('#f0f8ff')
-      forest.ambient.intensity = THREE.MathUtils.lerp(0.55, 0.78, dayT)
+      forest.ambient.color.set(m.ambientColor)
+      forest.ambient.intensity = m.ambient * 0.78
     }
+
+    postfx?.applyAtmosphere(m)
   }
 
   dispose() {

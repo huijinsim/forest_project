@@ -21,7 +21,7 @@ export class Renderer {
     this.instance.shadowMap.type = THREE.PCFSoftShadowMap
     container.appendChild(this.instance.domElement)
 
-    const ov = CONFIG.camera.overview
+    const ov = CONFIG.camera.home
     this.camera = new THREE.PerspectiveCamera(
       ov.fov,
       1,

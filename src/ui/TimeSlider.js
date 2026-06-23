@@ -4,9 +4,11 @@ import { CONFIG } from '../config.js'
 // TimeSlider — 하루 시간(해→달) 조절 스크롤바
 // ─────────────────────────────────────────────────────────────
 export class TimeSlider {
-  /** @param {(t:number, label:string)=>void} onChange */
-  constructor(onChange) {
+  /** @param {(t:number)=>void} onChange */
+  constructor(onChange, { onManualStart, onManualEnd } = {}) {
     this.onChange = onChange
+    this.onManualStart = onManualStart
+    this.onManualEnd = onManualEnd
     this._buildDom()
   }
 
@@ -63,7 +65,7 @@ export class TimeSlider {
         <span>시간</span>
         <div class="label">아침</div>
       </div>
-      <input type="range" min="0" max="1000" value="320" step="1" aria-label="하루 시간">
+      <input type="range" min="0" max="1000" value="0" step="1" aria-label="하루 시간">
       <div class="ticks">
         <span>아침</span><span>점심</span><span>저녁</span><span>밤</span>
       </div>
@@ -77,6 +79,13 @@ export class TimeSlider {
       const t = Number(this.input.value) / 1000
       this.onChange?.(t)
     })
+
+    this.input.addEventListener('pointerdown', () => {
+      this.onManualStart?.()
+    })
+    this._onManualEnd = () => this.onManualEnd?.()
+    this.input.addEventListener('pointerup', this._onManualEnd)
+    this.input.addEventListener('pointercancel', this._onManualEnd)
 
     this.root.addEventListener('pointerdown', (e) => e.stopPropagation())
     this.root.addEventListener('click', (e) => e.stopPropagation())
@@ -102,6 +111,8 @@ export class TimeSlider {
   }
 
   dispose() {
+    this.input.removeEventListener('pointerup', this._onManualEnd)
+    this.input.removeEventListener('pointercancel', this._onManualEnd)
     this.root.remove()
   }
 }

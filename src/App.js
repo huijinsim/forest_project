@@ -36,6 +36,14 @@ export class App {
     this._panRight = new THREE.Vector3()
     this._panForward = new THREE.Vector3()
     this._panMove = new THREE.Vector3()
+    this._posHome = new THREE.Vector3(...CONFIG.camera.home.position)
+    this._posCl = new THREE.Vector3(...CONFIG.camera.close.position)
+    this._tgtHome = new THREE.Vector3(...CONFIG.camera.home.target)
+    this._tgtCl = new THREE.Vector3(...CONFIG.camera.close.target)
+    this._explorePos = new THREE.Vector3()
+    this._exploreTarget = new THREE.Vector3()
+    this.zoomSmooth = CONFIG.camera.zoom.default
+    this.panSmooth = CONFIG.camera.pan.default
 
     this.pageOverlay = new PageOverlay()
     const bc = CONFIG.interaction.butterflyCursor ?? {}
@@ -48,11 +56,14 @@ export class App {
     this.renderer = new Renderer(container)
     this.postfx = new PostFX(this.renderer.instance, this.renderer.camera)
     this.dayCycle = new DayCycle()
-    this.timeSlider = new TimeSlider((t) => {
-      this.dayCycle.setTime(t)
-      this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
-      this.dayCycle.apply(this.forest, this.renderer.camera)
-    })
+    this._autoTimePaused = false
+    this.timeSlider = new TimeSlider(
+      (t) => this._onManualTimeChange(t),
+      {
+        onManualStart: () => { this._autoTimePaused = true },
+        onManualEnd: () => { this._autoTimePaused = false },
+      },
+    )
     this.shinyCards.onActiveChange = (active) => {
       if (active) this.timeSlider.hide()
       else if (this.mainActive) this.timeSlider.show(this.dayCycle.t)
@@ -64,12 +75,35 @@ export class App {
     this._resizeObserver.observe(this.container)
   }
 
+  _onManualTimeChange(t) {
+    this.dayCycle.setTime(t)
+    this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
+    this.dayCycle.apply(this.forest, this.renderer.camera, this.postfx)
+  }
+
+  _advanceAutoTime(delta) {
+    if (this._autoTimePaused || this.shinyCards?.isActive()) return
+
+    const duration = CONFIG.dayCycle.autoDuration ?? 120
+    let t = this.dayCycle.t + delta / duration
+    if (t >= 1) t -= Math.floor(t)
+
+    this.dayCycle.setTime(t)
+    if (this.timeSlider.root.classList.contains('is-visible')) {
+      this.timeSlider.setValue(t, false)
+      this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
+    }
+  }
+
   _initControls() {
     const cam = this.renderer.camera
-    const ov = CONFIG.camera.overview
 
     this.controls = new OrbitControls(cam, this.renderer.instance.domElement)
-    this._applyDefaultView(ov)
+    CONFIG.camera.zoom.value = CONFIG.camera.zoom.default
+    CONFIG.camera.pan.value = CONFIG.camera.pan.default
+    this.zoomSmooth = CONFIG.camera.zoom.default
+    this.panSmooth = CONFIG.camera.pan.default
+    this._snapToHome()
     this.controls.enableDamping = true
     this.controls.dampingFactor = 0.08
     this.controls.enableRotate = false
@@ -79,17 +113,66 @@ export class App {
     this.controls.maxDistance = 160
     this.controls.maxPolarAngle = Math.PI * 0.46
     this.controls.enabled = false
-    this.controls.saveState()
   }
 
-  /** config.camera.overview 시점 적용 */
-  _applyDefaultView(ov = CONFIG.camera.overview) {
+  _exploreViewAt(zoomT, panX, outPos, outTarget) {
+    outPos.lerpVectors(this._posHome, this._posCl, zoomT)
+    outTarget.lerpVectors(this._tgtHome, this._tgtCl, zoomT)
+    outPos.x += panX
+    outTarget.x += panX
+    return outPos
+  }
+
+  _exploreFovAt(zoomT) {
+    return THREE.MathUtils.lerp(CONFIG.camera.home.fov, CONFIG.camera.close.fov, zoomT)
+  }
+
+  _snapToHome() {
     const cam = this.renderer.camera
-    cam.position.set(...ov.position)
-    cam.fov = ov.fov
+    const home = CONFIG.camera.home
+
+    cam.position.set(...home.position)
+    this.controls.target.set(...home.target)
+    cam.fov = home.fov
+    if (cam.aspect < 1.05) cam.fov += (1.05 - cam.aspect) * 12
     cam.updateProjectionMatrix()
-    this.controls.target.set(...ov.target)
+
+    CONFIG.camera.zoom.value = CONFIG.camera.zoom.min
+    CONFIG.camera.pan.value = CONFIG.camera.pan.default
+    this.zoomSmooth = CONFIG.camera.zoom.min
+    this.panSmooth = CONFIG.camera.pan.default
     this.controls.update()
+  }
+
+  _applyExploreCamera() {
+    const cam = this.renderer.camera
+    const zoomCfg = CONFIG.camera.zoom
+    const panCfg = CONFIG.camera.pan
+    const t = THREE.MathUtils.clamp(this.zoomSmooth, zoomCfg.min, zoomCfg.max)
+    const panX = THREE.MathUtils.clamp(this.panSmooth, panCfg.min, panCfg.max)
+    this.zoomSmooth = t
+    this.panSmooth = panX
+
+    if (t <= zoomCfg.min + 0.0001 && Math.abs(panX) < 0.0001) {
+      cam.position.copy(this._posHome)
+      this.controls.target.copy(this._tgtHome)
+      cam.fov = CONFIG.camera.home.fov
+    } else {
+      this._exploreViewAt(t, panX, this._explorePos, this._exploreTarget)
+      cam.position.copy(this._explorePos)
+      this.controls.target.copy(this._exploreTarget)
+      cam.fov = this._exploreFovAt(t)
+    }
+
+    if (cam.aspect < 1.05) cam.fov += (1.05 - cam.aspect) * 12
+    if (t > 0.5) cam.fov += (t - 0.5) * 6
+    cam.updateProjectionMatrix()
+    this.controls.update()
+  }
+
+  /** config.camera.home 시점 적용 */
+  _applyDefaultView() {
+    this._snapToHome()
   }
 
   /** 새로고침·페이지 복귀 시 항상 같은 시점으로 */
@@ -98,11 +181,7 @@ export class App {
     this._killCameraTween()
     this._focusedTree = null
     this.shinyCards?.clear(false)
-    this.controls.reset()
-    const ov = CONFIG.camera.overview
-    this.renderer.camera.fov = ov.fov
-    this.renderer.camera.updateProjectionMatrix()
-    this.controls.update()
+    this._snapToHome()
   }
 
   _killCameraTween() {
@@ -164,31 +243,37 @@ export class App {
   }
 
   _updateKeyboardCamera(delta) {
-    if (!this.controls?.enabled || this._cameraTween || !this._keyState.size) return
+    if (!this.controls?.enabled || this._cameraTween || this._focusedTree) return
 
-    const speed = (CONFIG.camera.keyboard?.panSpeed ?? CONFIG.camera.pan.keySpeed) * delta
-    const cam = this.renderer.camera
+    const panCfg = CONFIG.camera.pan
+    const zoomCfg = CONFIG.camera.zoom
+    const panSpeed = CONFIG.camera.keyboard?.panSpeed ?? panCfg.keySpeed
+    const zoomSpeed = zoomCfg.keySpeed ?? 0.85
 
-    cam.getWorldDirection(this._panForward)
-    this._panForward.y = 0
-    if (this._panForward.lengthSq() < 1e-6) return
-    this._panForward.normalize()
-    this._panRight.crossVectors(this._panForward, cam.up).normalize()
+    if (this._keyState.size) {
+      if (this._keyState.has('ArrowLeft')) {
+        panCfg.value = THREE.MathUtils.clamp(panCfg.value - panSpeed * delta, panCfg.min, panCfg.max)
+      }
+      if (this._keyState.has('ArrowRight')) {
+        panCfg.value = THREE.MathUtils.clamp(panCfg.value + panSpeed * delta, panCfg.min, panCfg.max)
+      }
+      if (this._keyState.has('ArrowUp')) {
+        zoomCfg.value = THREE.MathUtils.clamp(zoomCfg.value + zoomSpeed * delta, zoomCfg.min, zoomCfg.max)
+      }
+      if (this._keyState.has('ArrowDown')) {
+        zoomCfg.value = THREE.MathUtils.clamp(zoomCfg.value - zoomSpeed * delta, zoomCfg.min, zoomCfg.max)
+      }
 
-    this._panMove.set(0, 0, 0)
-    if (this._keyState.has('ArrowLeft')) this._panMove.addScaledVector(this._panRight, -speed)
-    if (this._keyState.has('ArrowRight')) this._panMove.addScaledVector(this._panRight, speed)
-    if (this._keyState.has('ArrowUp')) this._panMove.addScaledVector(this._panForward, speed)
-    if (this._keyState.has('ArrowDown')) this._panMove.addScaledVector(this._panForward, -speed)
+      if (this._keyState.has('ArrowLeft')) this.butterflyCursor.setFacing(-1)
+      else if (this._keyState.has('ArrowRight')) this.butterflyCursor.setFacing(1)
+    }
 
-    if (this._keyState.has('ArrowLeft')) this.butterflyCursor.setFacing(-1)
-    else if (this._keyState.has('ArrowRight')) this.butterflyCursor.setFacing(1)
+    const za = 1 - Math.pow(1 - zoomCfg.damping, delta * 60)
+    this.zoomSmooth += (zoomCfg.value - this.zoomSmooth) * za
+    const pa = 1 - Math.pow(1 - panCfg.damping, delta * 60)
+    this.panSmooth += (panCfg.value - this.panSmooth) * pa
 
-    if (this._panMove.lengthSq() === 0) return
-
-    this.controls.target.add(this._panMove)
-    cam.position.add(this._panMove)
-    this.controls.update()
+    this._applyExploreCamera()
   }
 
   _focusTree(mesh, instanceId, placement) {
@@ -206,11 +291,11 @@ export class App {
     this._focusedTree = null
     this.shinyCards.clear()
 
-    const ov = CONFIG.camera.overview
-    const toPos = new THREE.Vector3(...ov.position)
-    const toTarget = new THREE.Vector3(...ov.target)
+    const home = CONFIG.camera.home
+    const toPos = new THREE.Vector3(...home.position)
+    const toTarget = new THREE.Vector3(...home.target)
     this._animateCamera(toPos, toTarget, CONFIG.interaction.returnDuration, () => {
-      this.controls.saveState()
+      this._snapToHome()
     })
   }
 
@@ -240,7 +325,7 @@ export class App {
 
   bootstrap() {
     this.dayCycle.bindRenderer(this.renderer.instance)
-    this.dayCycle.apply(null, this.renderer.camera)
+    this.dayCycle.apply(null, this.renderer.camera, this.postfx)
     this.resize()
     this.clock.start()
     this._loop()
@@ -302,7 +387,8 @@ export class App {
 
     try {
       await this._loadForest()
-      this.dayCycle.apply(this.forest, this.renderer.camera)
+      this.dayCycle.setTime(CONFIG.dayCycle.default)
+      this.dayCycle.apply(this.forest, this.renderer.camera, this.postfx)
       this.timeSlider.setValue(this.dayCycle.t, false)
       this.timeSlider.setLabel(this.dayCycle.atmosphere.label)
       this.timeSlider.show(this.dayCycle.t)
@@ -332,6 +418,30 @@ export class App {
     this.container.addEventListener('pointerdown', this._onPointerDown)
     this.container.addEventListener('pointerup', this._onPointerUp)
 
+    this._onWheel = (e) => {
+      if (!this.mainActive || this.pageOverlay?.isOpen || this._focusedTree || this._cameraTween) return
+
+      const panCfg = CONFIG.camera.pan
+      const zoomCfg = CONFIG.camera.zoom
+      e.preventDefault()
+
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        panCfg.value = THREE.MathUtils.clamp(
+          panCfg.value - e.deltaX * panCfg.wheelSpeed,
+          panCfg.min,
+          panCfg.max,
+        )
+        return
+      }
+
+      zoomCfg.value = THREE.MathUtils.clamp(
+        zoomCfg.value - e.deltaY * zoomCfg.speed,
+        zoomCfg.min,
+        zoomCfg.max,
+      )
+    }
+    this.container.addEventListener('wheel', this._onWheel, { passive: false })
+
     this._onKeyDown = (e) => {
       if (!this.mainActive || this.pageOverlay?.isOpen) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -344,7 +454,12 @@ export class App {
       }
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault()
-        this.butterflyCursor.cycle()
+        // 세부 카드: 뒤집기 / 메인·4장 그리드: 나비 커서 순환
+        if (this.shinyCards.isExpanded()) {
+          this.shinyCards.toggleFlip()
+        } else {
+          this.butterflyCursor.cycle()
+        }
       }
       if (e.code === 'Enter' && !e.repeat) {
         e.preventDefault()
@@ -436,11 +551,12 @@ export class App {
     const elapsed = this.clock.getElapsedTime()
     const cam = this.renderer.camera
     if (this.forest) {
-      this.dayCycle.apply(this.forest, cam)
+      if (this.mainActive) this._advanceAutoTime(delta)
+      this.dayCycle.apply(this.forest, cam, this.postfx)
       this.forest.update(elapsed)
       const pos = this.butterflyCursor.getPosition()
       this.shinyCards?.updatePointer(pos.x, pos.y)
-      this.postfx.render(this.forest.scene, cam, elapsed)
+      this.postfx.render(this.forest.scene, cam, elapsed, this.dayCycle.atmosphere)
     } else {
       this.renderer.render(new THREE.Scene(), cam)
     }
@@ -454,6 +570,7 @@ export class App {
     window.removeEventListener('blur', this._onBlur)
     this.container.removeEventListener('pointerdown', this._onPointerDown)
     this.container.removeEventListener('pointerup', this._onPointerUp)
+    this.container.removeEventListener('wheel', this._onWheel)
     this._resizeObserver?.disconnect()
     this.controls?.dispose()
     this.pageOverlay?.dispose()

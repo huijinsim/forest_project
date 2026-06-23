@@ -21,6 +21,7 @@ export class TreeShinyCards {
     this.dampen = this.cfg.dampen ?? 40
     this.cardWidth = this.cfg.width ?? 200
     this.expandedWidth = this.cfg.expandedWidth ?? 560
+    this.backUrl = this.cfg.backUrl ?? '/card/postcard.jpg'
     this.titleUrl = this.cfg.titleUrl ?? '/title/menifesto.PNG'
     this.titleWidth = this.cfg.titleWidth ?? 300
 
@@ -103,9 +104,10 @@ export class TreeShinyCards {
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: clamp(40px, 7vh, 64px) 20px clamp(32px, 5vh, 48px);
+          padding: clamp(36px, 7vh, 64px) 16px clamp(32px, 6vh, 56px);
           box-sizing: border-box;
           overflow-y: auto;
+          overflow-x: hidden;
           opacity: 0;
           visibility: hidden;
           pointer-events: none;
@@ -120,26 +122,67 @@ export class TreeShinyCards {
         }
         #tree-shiny-cards .shiny-expanded-outer {
           perspective: 1000px;
-          max-height: 100%;
+          max-height: calc(100dvh - 72px);
+          width: min(var(--expanded-w, 560px), 92vw);
           flex-shrink: 0;
         }
         #tree-shiny-cards .shiny-expanded-card {
           position: relative;
-          width: min(var(--expanded-w, 560px), 92vw);
-          max-height: min(calc(100dvh - 88px), 780px);
+          width: 100%;
+          max-height: calc(100dvh - 72px);
           border-radius: 18px;
-          overflow: hidden;
           transform-style: preserve-3d;
           box-shadow: 0 24px 48px rgba(24, 32, 22, 0.28);
-          border: 1px solid rgba(255, 255, 255, 0.38);
-          backdrop-filter: blur(4px) brightness(1.08);
+          background: transparent;
+          border: none;
+          overflow: visible;
         }
-        #tree-shiny-cards .shiny-expanded-card img {
+        #tree-shiny-cards .shiny-expanded-tilt {
+          transform-style: preserve-3d;
+          width: 100%;
+        }
+        #tree-shiny-cards .shiny-expanded-flip {
+          position: relative;
+          transform-style: preserve-3d;
+          transition: transform 0.65s cubic-bezier(0.4, 0.2, 0.2, 1);
+          width: 100%;
+        }
+        #tree-shiny-cards.is-flipped .shiny-expanded-flip {
+          transform: rotateY(180deg);
+        }
+        #tree-shiny-cards .shiny-expanded-face {
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          border-radius: 18px;
+          overflow: hidden;
+          background: #faf8f2;
+          line-height: 0;
+        }
+        #tree-shiny-cards .shiny-expanded-front {
+          position: relative;
+        }
+        #tree-shiny-cards .shiny-expanded-back {
+          position: absolute;
+          inset: 0;
+          transform: rotateY(180deg);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        #tree-shiny-cards .shiny-expanded-face img {
           display: block;
           width: 100%;
           height: auto;
-          max-height: min(calc(100dvh - 88px), 780px);
+          max-height: calc(100dvh - 72px);
           object-fit: contain;
+          object-position: center;
+          user-select: none;
+          -webkit-user-drag: none;
+        }
+        #tree-shiny-cards .shiny-expanded-back img {
+          width: auto;
+          max-width: 100%;
+          max-height: 100%;
         }
       </style>
       <div class="shiny-cards-stack">
@@ -149,8 +192,17 @@ export class TreeShinyCards {
       <div class="shiny-expanded-layer">
         <div class="shiny-expanded-outer">
           <div class="shiny-expanded-card">
-            <div class="shiny-card-sheen"></div>
-            <img alt="" draggable="false">
+            <div class="shiny-expanded-tilt">
+              <div class="shiny-expanded-flip">
+                <div class="shiny-expanded-face shiny-expanded-front">
+                  <div class="shiny-card-sheen"></div>
+                  <img class="shiny-expanded-front-img" alt="" draggable="false">
+                </div>
+                <div class="shiny-expanded-face shiny-expanded-back">
+                  <img class="shiny-expanded-back-img" alt="" draggable="false">
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -165,17 +217,26 @@ export class TreeShinyCards {
 
     this.row = this.root.querySelector('.shiny-cards-row')
     this.expandedLayer = this.root.querySelector('.shiny-expanded-layer')
+    this.expandedOuter = this.root.querySelector('.shiny-expanded-outer')
     this.expandedCard = this.root.querySelector('.shiny-expanded-card')
+    this.expandedTilt = this.root.querySelector('.shiny-expanded-tilt')
     this.expandedSheen = this.expandedCard.querySelector('.shiny-card-sheen')
-    this.expandedImg = this.expandedCard.querySelector('img')
-    this.expandedCard.style.setProperty('--expanded-w', `${this.expandedWidth}px`)
+    this.expandedFrontImg = this.root.querySelector('.shiny-expanded-front-img')
+    this.expandedBackImg = this.root.querySelector('.shiny-expanded-back-img')
+    this.expandedBackImg.src = this.backUrl
+    this.expandedOuter.style.setProperty('--expanded-w', `${this.expandedWidth}px`)
 
     this.cards = []
     this.active = false
     this.expanded = false
+    this.flipped = false
     this._expandedIndex = -1
     this._pointer = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
     this.onActiveChange = null
+    this._onExpandedResize = () => {
+      if (this.expanded) this._fitExpandedToViewport()
+    }
+    window.addEventListener('resize', this._onExpandedResize)
 
     for (let i = 0; i < this.urls.length; i++) {
       const outer = document.createElement('div')
@@ -237,6 +298,25 @@ export class TreeShinyCards {
     return this.expanded
   }
 
+  isFlipped() {
+    return this.flipped
+  }
+
+  _setFlipped(next) {
+    this.flipped = next
+    this.root.classList.toggle('is-flipped', next)
+  }
+
+  toggleFlip() {
+    if (!this.expanded) return false
+    this._setFlipped(!this.flipped)
+    return true
+  }
+
+  _resetFlip() {
+    this._setFlipped(false)
+  }
+
   _hitIndex(clientX, clientY) {
     for (let i = 0; i < this.cards.length; i++) {
       const rect = this.cards[i].outer.getBoundingClientRect()
@@ -260,15 +340,41 @@ export class TreeShinyCards {
     return true
   }
 
+  _fitExpandedToViewport() {
+    const maxH = window.innerHeight - 72
+    const maxW = Math.min(this.expandedWidth, window.innerWidth * 0.92)
+    const img = this.expandedFrontImg
+    if (!img?.naturalWidth) {
+      this.expandedOuter.style.width = `${maxW}px`
+      return
+    }
+
+    const aspect = img.naturalHeight / img.naturalWidth
+    let w = maxW
+    if (w * aspect > maxH) w = maxH / aspect
+
+    this.expandedOuter.style.width = `${Math.floor(w)}px`
+  }
+
   expand(index) {
     if (!this.active || index < 0 || index >= this.cards.length) return
 
+    this._resetFlip()
     this.expanded = true
     this._expandedIndex = index
     this.root.classList.add('is-expanded')
-    this.expandedImg.src = this.urls[index]
+    this.expandedFrontImg.onload = () => {
+      this._fitExpandedToViewport()
+      this.updatePointer(this._pointer.x, this._pointer.y)
+    }
+    this.expandedFrontImg.src = this.urls[index]
+    if (this.expandedFrontImg.complete) {
+      this._fitExpandedToViewport()
+      this.updatePointer(this._pointer.x, this._pointer.y)
+    }
 
     gsap.set(this.expandedCard, { scale: 0.82, rotateY: -16, opacity: 0 })
+    gsap.set(this.expandedTilt, { clearProps: 'transform' })
     gsap.to(this.expandedCard, {
       scale: 1,
       rotateY: 0,
@@ -291,8 +397,10 @@ export class TreeShinyCards {
       onComplete: () => {
         this.expanded = false
         this._expandedIndex = -1
+        this._resetFlip()
         this.root.classList.remove('is-expanded')
         gsap.set(this.expandedCard, { clearProps: 'transform,opacity' })
+        gsap.set(this.expandedTilt, { clearProps: 'transform' })
         this.expandedSheen.style.background = ''
         this.updatePointer(this._pointer.x, this._pointer.y)
       },
@@ -337,7 +445,7 @@ export class TreeShinyCards {
     this._pointer.y = clientY
 
     if (this.expanded) {
-      this._applyTilt(this.expandedCard, this.expandedSheen, clientX, clientY, 8)
+      this._applyTilt(this.expandedTilt, this.expandedSheen, clientX, clientY, 8)
       return
     }
 
@@ -351,8 +459,10 @@ export class TreeShinyCards {
 
     this.expanded = false
     this._expandedIndex = -1
+    this._resetFlip()
     this.root.classList.remove('is-expanded')
     gsap.set(this.expandedCard, { clearProps: 'transform,opacity' })
+    gsap.set(this.expandedTilt, { clearProps: 'transform' })
     this.expandedSheen.style.background = ''
 
     if (!wasActive && !animate) return
@@ -393,6 +503,7 @@ export class TreeShinyCards {
   }
 
   dispose() {
+    window.removeEventListener('resize', this._onExpandedResize)
     this.clear(false)
     this.root.remove()
   }

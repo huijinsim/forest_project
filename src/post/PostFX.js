@@ -105,7 +105,7 @@ export class PostFX {
     this.sketch.uniforms.uResolution.value.set(w, h)
   }
 
-  render(scene, camera, elapsed) {
+  render(scene, camera, elapsed, atmosphere = null) {
     this.renderPass.scene = scene
     this.renderPass.camera = camera
     this.gtao.scene = scene
@@ -114,10 +114,37 @@ export class PostFX {
     const u = this.sketch.uniforms
     const p = CONFIG.painterly
     u.uTime.value = elapsed
-    u.uEdgeThreshold.value = p.edgeThreshold
-    u.uEdgeSoftness.value = p.edgeSoftness
+
+    if (!atmosphere?.mood) {
+      u.uEdgeThreshold.value = p.edgeThreshold
+      u.uEdgeSoftness.value = p.edgeSoftness
+      u.uInkColor.value.set(p.inkColor)
+      u.uInkStrength.value = p.inkStrength
+      u.uHatchScale.value = p.hatchScale
+      u.uHatchStrength.value = p.hatchStrength
+      u.uHatchInk.value.set(p.hatchInk)
+      u.uCelLevels.value = p.celLevels
+      u.uCelMix.value = p.celMix
+      u.uPaper.value = p.paper
+      u.uPaperScale.value = p.paperScale
+      u.uWash.value = p.wash
+      u.uWashColor.value.set(p.washColor)
+      u.uSaturation.value = p.saturation
+      u.uLift.value = p.lift
+      u.uShadowTint.value.set(p.shadowTint)
+      u.uHighlightTint.value.set(p.highlightTint)
+      u.uVignette.value = p.vignette
+    }
+
+    this.composer.render()
+  }
+
+  applyAtmosphere(mood) {
+    const p = CONFIG.painterly
+    const u = this.sketch.uniforms
+
     u.uInkColor.value.set(p.inkColor)
-    u.uInkStrength.value = p.inkStrength
+    u.uInkStrength.value = mood.inkStrength
     u.uHatchScale.value = p.hatchScale
     u.uHatchStrength.value = p.hatchStrength
     u.uHatchInk.value.set(p.hatchInk)
@@ -125,15 +152,19 @@ export class PostFX {
     u.uCelMix.value = p.celMix
     u.uPaper.value = p.paper
     u.uPaperScale.value = p.paperScale
-    u.uWash.value = p.wash
-    u.uWashColor.value.set(p.washColor)
-    u.uSaturation.value = p.saturation
-    u.uLift.value = p.lift
-    u.uShadowTint.value.set(p.shadowTint)
-    u.uHighlightTint.value.set(p.highlightTint)
-    u.uVignette.value = p.vignette
+    u.uWash.value = mood.wash
+    u.uWashColor.value.set(mood.washColor)
+    u.uSaturation.value = mood.saturation
+    u.uLift.value = mood.lift
+    u.uShadowTint.value.set(mood.shadowTint)
+    u.uHighlightTint.value.set(mood.highlightTint)
+    u.uVignette.value = mood.vignette
+    u.uEdgeThreshold.value = p.edgeThreshold
+    u.uEdgeSoftness.value = p.edgeSoftness
 
-    this.composer.render()
+    this.gtao.updateGtaoMaterial({ scale: mood.aoScale })
+    this.bloom.strength = mood.bloomStrength
+    this.bloom.threshold = mood.bloomThreshold
   }
 
   dispose() {
